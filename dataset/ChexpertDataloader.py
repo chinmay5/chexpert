@@ -148,9 +148,9 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
     data_items['test'] = data_items_te
 
     # [!] For overfitting!
-    data_items['train'] = data_items_tr[::100]
-    data_items['valid'] = data_items_va[::10]
-    data_items['test']  = data_items_te[::10]
+    # data_items['train'] = data_items_tr[::100]
+    # data_items['valid'] = data_items_va[::10]
+    # data_items['test']  = data_items_te[::10]
 
     def get_data_loader(data_items, split, batch_size, augment, preprocess, shuffle=True):
         data_items = data_items[split]
@@ -190,7 +190,7 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
 if __name__ == '__main__':
     parser = read_config()
     uncertainty_labels = parser['data'].get('uncertainty_labels')
-    data = data_loader_dict(uncertainty_labels=uncertainty_labels, batch_size=64, num_workers=4)
+    data, weights = data_loader_dict(uncertainty_labels=uncertainty_labels, batch_size=64, num_workers=4)
     train = data['train']
     for img, label in train:
         print(img.shape)

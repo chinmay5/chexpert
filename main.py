@@ -39,7 +39,7 @@ class CheXpertTrainer():
 
     @staticmethod
     def epochTrain(model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId,
-                   min_val_loss, scaler, args):
+                   max_val_auc, scaler, args):
 
         model.train()
         for batchID, (varInput, target) in enumerate(dataLoader_train):
@@ -60,8 +60,7 @@ class CheXpertTrainer():
 
             l = lossvalue.item()
 
-            # if batchID % 1000 == 999:
-            if batchID % 10 == 1:
+            if batchID % 1000 == 999:
                 step = (epochId * len(dataLoader_train)) + batchID  # Use the same step for logging
                 logger_train.add_scalar(tag="loss", scalar_value=l, global_step=step)
                 le, val_auc = CheXpertTrainer.epochVal(model=model, dataLoader=dataLoaderVal, loss=criterion, args=args)
@@ -69,9 +68,8 @@ class CheXpertTrainer():
                 logger_val.add_scalar(tag="mean_auc", scalar_value=val_auc, global_step=step)
                 # Put the model back in training mode
                 model.train()
-                if le < min_val_loss:
-                    min_val_loss = le
-                    torch.save({'epoch': epochId + 1, 'state_dict': model.state_dict(), 'best_loss': min_val_loss,
+                if val_auc > max_val_auc:
+                    torch.save({'epoch': epochId + 1, 'state_dict': model.state_dict(), 'best_auc': max_val_auc,
                                 'optimizer': optimizer.state_dict()},
                                os.path.join(args.save_dir, 'model' + str(epochId) + '.pth'))
                 print(f"Epoch {epochId}:{batchID} iterations completed")
@@ -80,7 +78,7 @@ class CheXpertTrainer():
         if args.lr_schedule and (epochId + 1) % args.schedule_after_epochs == 0:
             args.lr = CheXpertTrainer.scale_lr(lr=args.lr, factor=args.factor, optimizer=optimizer)
 
-        return min_val_loss
+        return max_val_auc
 
     @staticmethod
     def epochVal(model, dataLoader, loss, args):
@@ -117,8 +115,8 @@ class CheXpertTrainer():
                           args):
 
         # SETTINGS: OPTIMIZER & SCHEDULER
-        # optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
         if label_weights is not None:
             pos_weight, neg_weight = label_weights
             pos_weight = pos_weight.to(DEVICE)
@@ -135,18 +133,18 @@ class CheXpertTrainer():
         logger_val = SummaryWriter(os.path.join(logdir, 'val'))
 
         # TRAIN THE NETWORK
-        min_val_loss = 100000
+        max_val_auc = 0
 
         # Mixed Precision Training
         scaler = GradScaler()
         for epochID in range(trMaxEpoch):
             # (model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId
-            min_val_loss = CheXpertTrainer.epochTrain(model=model, dataLoader_train=dataLoaderTrain,
+            max_val_auc = CheXpertTrainer.epochTrain(model=model, dataLoader_train=dataLoaderTrain,
                                                                  dataLoaderVal=dataLoaderVal,
                                                                  optimizer=optimizer, criterion=criterion,
                                                                  logger_train=logger_train,
                                                                  logger_val=logger_val, epochId=epochID,
-                                                                 min_val_loss=min_val_loss, scaler=scaler,
+                                                                 max_val_auc=max_val_auc, scaler=scaler,
                                                                  args=args)
         # Select the last saved model as it would work as the best model
         bestModel = max([int(''.join(i for i in x if i.isdigit())) for x in os.listdir(args.save_dir)])
@@ -284,7 +282,7 @@ if __name__ == '__main__':
     args.schedule_after_epochs = parser['setup'].getint('schedule_after_epochs')
 
     args.uncertainty_labels = parser['data'].get('uncertainty_labels')
-    args.build_graph = args.model_type == 'base'
+    args.build_graph = True #args.model_type == 'base'
     # Add some extra configurations
     args.pathFileTrain = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'train.csv')
     args.pathFileValid = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'valid.csv')

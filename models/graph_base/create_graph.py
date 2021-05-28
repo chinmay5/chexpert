@@ -26,7 +26,9 @@ def plot_cooccurence():
     plt.xticks(np.arange(len(label_columns)), label_columns, rotation='vertical')
     plt.ylim(-0.5, len(label_columns) - 0.5)
     plt.gca().invert_yaxis()
-    plt.imshow(co_occurrence_mat)
+    cmap = plt.get_cmap('RdBu')
+    plt.imshow(co_occurrence_mat, cmap=cmap)
+    plt.colorbar()
     plt.subplot(132)
     plt.xticks(np.arange(len(label_columns)), label_columns, rotation='vertical')
     plt.ylim(-0.5, len(label_columns) - 0.5)
@@ -81,11 +83,12 @@ def create_graph_data_object(debug=True):
         [[int(e[0]), int(e[1])] for e in zip(*co_occur_directional.nonzero())],
         dtype=torch.long)
     edge_features = [[co_occur_directional[int(e[0])][int(e[1])]] for e in zip(*co_occur_directional.nonzero())]
-    edge_features = torch.as_tensor(np.concatenate(edge_features), dtype=torch.float).unsqueeze(1)
+    edge_features = torch.as_tensor(np.concatenate(edge_features), dtype=torch.float)#.unsqueeze(1)
     # We would also need word features
     new_node_names = []
     for x in label_columns:
         new_node_names.append(re.sub(r'[0-9\(\)\/:;,-]', ' ', x))
+    # We have the cleaned node names. Now we can compute their feature values.
     if debug:
         x = torch.as_tensor(range(len(label_columns)), dtype=torch.float)
     else:
@@ -168,7 +171,7 @@ def plot_3d_graph(uncertainty_labels):
 
 
 if __name__ == '__main__':
-    parser = read_config()
-    uncertainty_labels = parser['data'].get('uncertainty_labels')
-    plot_3d_graph(uncertainty_labels=uncertainty_labels)
-    # plot_cooccurence()
+    # parser = read_config()
+    # uncertainty_labels = parser['data'].get('uncertainty_labels')
+    # plot_3d_graph(uncertainty_labels=uncertainty_labels)
+    plot_cooccurence()

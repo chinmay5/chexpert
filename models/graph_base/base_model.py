@@ -34,9 +34,7 @@ class BaseGNNModel(nn.Module):
         x = self.conv2(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
         # x = self.conv2(x=x, edge_index=edge_index)  # W, 1664
         # img_feat = B, 1664, x = W, 1664
-        # x = torch.mm(img_feat, x.t())
-        # dot product
-        x = torch.einsum('ij,kj->ik', img_feat, x)
+        x = torch.mm(img_feat, x.t())
         return x
 
 if __name__ == '__main__':
