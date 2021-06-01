@@ -11,12 +11,11 @@ from matplotlib import pyplot as plt
 from sklearn.metrics import roc_auc_score
 from torch import optim, nn
 from torch.backends import cudnn
-from torch.cuda.amp import autocast, GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset.ChexpertDataloader import data_loader_dict
 from environment_setup import PROJECT_ROOT_DIR, read_config
-from loss_fn.WeightedBCE import WCELossFunc
+from loss_fn.WeightedBCE import WCELossFunc, WCELossFuncMy
 from models.model_factory import create_model
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -38,7 +37,7 @@ class CheXpertTrainer():
 
     @staticmethod
     def epochTrain(model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId,
-                   max_val_auc, scaler, args):
+                   max_val_auc, args):
 
         model.train()
         for batchID, (varInput, target) in enumerate(dataLoader_train):
@@ -47,16 +46,11 @@ class CheXpertTrainer():
             varTarget = target.cuda(non_blocking=True)
             varInput = varInput.to(DEVICE)
 
-            # Runs the forward pass with autocasting.
-            with autocast():
-                varOutput = model(varInput)
-                lossvalue = criterion(varOutput, varTarget)
+            varOutput = model(varInput)
+            lossvalue = criterion(varOutput, varTarget)
 
-            scaler.scale(lossvalue).backward()
-            # optimizer.step()
-            scaler.step(optimizer)
-            # Updates the scale for next iteration.
-            scaler.update()
+            lossvalue.backward()
+            optimizer.step()
 
             l = lossvalue.item()
 
@@ -127,7 +121,6 @@ class CheXpertTrainer():
         max_val_auc = 0
 
         # Mixed Precision Training
-        scaler = GradScaler()
         for epochID in range(trMaxEpoch):
             # (model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId
             max_val_auc = CheXpertTrainer.epochTrain(model=model, dataLoader_train=dataLoaderTrain,
@@ -135,8 +128,7 @@ class CheXpertTrainer():
                                                      optimizer=optimizer, criterion=criterion,
                                                      logger_train=logger_train,
                                                      logger_val=logger_val, epochId=epochID,
-                                                     max_val_auc=max_val_auc, scaler=scaler,
-                                                     args=args)
+                                                     max_val_auc=max_val_auc, args=args)
         # Select the last saved model as it would work as the best model
         bestModel = max([int(''.join(i for i in x if i.isdigit())) for x in os.listdir(args.save_dir)])
         return bestModel
@@ -202,7 +194,7 @@ class CheXpertTrainer():
         # SETTINGS: OPTIMIZER & SCHEDULER
         optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
         # Loss function formulation
-        criterion = WCELossFunc(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
+        criterion = WCELossFuncMy(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
         if args.mode == 'train':
             bestModelNumber = self.perform_train_val(model=model, dataLoaderTrain=data_loader['train'],
                                                      dataLoaderVal=data_loader['valid'], trMaxEpoch=args.max_epoch,

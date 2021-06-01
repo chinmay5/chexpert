@@ -22,8 +22,8 @@ class BaseGNNModel(nn.Module):
         # Create the graph based on label co-occurrences
         create_graph_data_object(debug=False)
         self.graph_data = torch.load(os.path.join(PROJECT_ROOT_DIR, 'models', 'graph_base', 'base_graph.pth'))
-        self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim)  # Since self loop already present
-        self.conv2 = GCNConv(in_channels=hidden_dim, out_channels=out_channels)
+        self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, add_self_loops=False)  # Since self loop already present
+        self.conv2 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, add_self_loops=False)
 
     def forward(self, image):
         img_feat = self.visual_feature_extractor(image)

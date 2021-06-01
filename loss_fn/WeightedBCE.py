@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class WCELossFunc(nn.Module):
@@ -11,10 +12,10 @@ class WCELossFunc(nn.Module):
         self.num_class = num_class
 
     def forward(self, scores, target):
-
+        eps = 0
         pos_count = torch.sum(target).detach()
-        total = target.size(0) * target.size(1)
-        weight_pos = total / pos_count
+        total = target.size(0) * target.size(1) + 1
+        weight_pos = total / (pos_count + 1)
         weight_neg = total / (total - pos_count)
 
         loss_list = torch.zeros(len(scores), self.num_class).to(scores.device)
@@ -22,16 +23,14 @@ class WCELossFunc(nn.Module):
         probs = torch.sigmoid(scores)
         for i in range(len(scores)):
             for j in range(self.num_class):
-                loss_list[i][j] = -weight_pos * target[i][j] * torch.pow((1 - probs[i][j]), self.beta) * torch.log(
-                    probs[i][j]) \
-                                  - weight_neg * (1 - target[i][j]) * torch.pow(probs[i][j],
-                                                                                self.beta) * torch.log(
-                    1 - probs[i][j])
-
+                loss_list[i][j] = -weight_pos * target[i][j] * torch.pow((1 - probs[i][j]), self.beta) * torch.log(probs[i][j] + eps)\
+                                  - weight_neg * (1 - target[i][j]) * torch.pow(probs[i][j], self.beta) * torch.log(1 - probs[i][j] + eps)
         loss = torch.mean(loss_list)
         return loss
 
 
+
+# https://www.kaggle.com/c/tgs-salt-identification-challenge/discussion/65938
 class WCELossFuncMy(nn.Module):
 
     def __init__(self, alpha, beta, num_class):
@@ -43,14 +42,12 @@ class WCELossFuncMy(nn.Module):
     def forward(self, scores, target):
         pos_count = torch.sum(target)
         total = target.size(0) * target.size(1)
-        weight_pos = total / pos_count
-        weight_neg = total / (total - pos_count)
-        probs = torch.sigmoid(scores)
-        loss_tensor = -weight_pos * target * torch.pow((1 - probs), self.beta) * torch.log(probs) \
-                      - weight_neg * (1 - target) * torch.pow(probs, self.beta) * torch.log(1 - probs)
-
-        loss = torch.mean(loss_tensor)
-        return loss
+        weight_factor = (total - pos_count) / pos_count
+        pos_weight = torch.ones(target.size(1), device=target.device) * weight_factor
+        loss = F.binary_cross_entropy_with_logits(scores, target, pos_weight=pos_weight, reduction="none")
+        pt = torch.exp(-loss)
+        F_loss = self.alpha * (1-pt)**self.beta * loss
+        return torch.mean(F_loss)
 
 
 if __name__ == '__main__':
@@ -61,8 +58,7 @@ if __name__ == '__main__':
     weight_pos = 25
     loss1 = WCELossFunc(alpha=alpha, beta=beta, num_class=num_class)
     loss2 = WCELossFuncMy(alpha=alpha, beta=beta, num_class=num_class)
-    y_labels = torch.randint(high=2, size=(8, 14)).cuda()
+    y_labels = torch.randint(high=2, size=(8, 14), dtype=torch.float).cuda()
     logits = torch.randn((8, 14)).cuda()
     l1 = loss1(logits, y_labels)
     l2 = loss2(logits, y_labels)
-    assert torch.isclose(l1, l2), "Move to default"
