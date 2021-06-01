@@ -171,7 +171,7 @@ def plot_3d_graph(uncertainty_labels):
 
 
 if __name__ == '__main__':
-    # parser = read_config()
-    # uncertainty_labels = parser['data'].get('uncertainty_labels')
-    # plot_3d_graph(uncertainty_labels=uncertainty_labels)
+    parser = read_config()
+    uncertainty_labels = parser['data'].get('uncertainty_labels')
+    plot_3d_graph(uncertainty_labels=uncertainty_labels)
     plot_cooccurence()

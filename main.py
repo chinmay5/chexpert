@@ -1,4 +1,3 @@
-import argparse
 import os
 from datetime import datetime
 import random
@@ -17,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dataset.ChexpertDataloader import data_loader_dict
 from environment_setup import PROJECT_ROOT_DIR, read_config
-from loss_fn.WeightedBCE import WeightedBCEWithLogitLoss, WeightedBCEWithLogitLossSec
+from loss_fn.WeightedBCE import WCELossFunc
 from models.model_factory import create_model
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -47,6 +46,7 @@ class CheXpertTrainer():
             optimizer.zero_grad()
             varTarget = target.cuda(non_blocking=True)
             varInput = varInput.to(DEVICE)
+
             # Runs the forward pass with autocasting.
             with autocast():
                 varOutput = model(varInput)
@@ -69,7 +69,8 @@ class CheXpertTrainer():
                 # Put the model back in training mode
                 model.train()
                 if val_auc > max_val_auc:
-                    torch.save({'epoch': epochId + 1, 'state_dict': model.state_dict(), 'best_auc': max_val_auc,
+                    max_val_auc = val_auc
+                    torch.save({'epoch': epochId + 1, 'state_dict': model.state_dict(), 'best_auc': val_auc,
                                 'optimizer': optimizer.state_dict()},
                                os.path.join(args.save_dir, 'model' + str(epochId) + '.pth'))
                 print(f"Epoch {epochId}:{batchID} iterations completed")
@@ -111,18 +112,8 @@ class CheXpertTrainer():
         return outLoss, aurocMean
 
     @staticmethod
-    def perform_train_val(model, dataLoaderTrain, dataLoaderVal, trMaxEpoch, logdir, checkpoint, label_weights, lr,
-                          args):
+    def perform_train_val(model, dataLoaderTrain, dataLoaderVal, trMaxEpoch, logdir, checkpoint, args, optimizer, criterion):
 
-        # SETTINGS: OPTIMIZER & SCHEDULER
-        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-        # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-        if label_weights is not None:
-            pos_weight, neg_weight = label_weights
-            pos_weight = pos_weight.to(DEVICE)
-            neg_weight = neg_weight.to(DEVICE)
-        # criterion = nn.BCEWithLogitsLoss()
-        criterion = WeightedBCEWithLogitLossSec(pos_weight=pos_weight, neg_weight=neg_weight)
         # LOAD CHECKPOINT
         if checkpoint != None:
             modelCheckpoint = torch.load(checkpoint)
@@ -140,12 +131,12 @@ class CheXpertTrainer():
         for epochID in range(trMaxEpoch):
             # (model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId
             max_val_auc = CheXpertTrainer.epochTrain(model=model, dataLoader_train=dataLoaderTrain,
-                                                                 dataLoaderVal=dataLoaderVal,
-                                                                 optimizer=optimizer, criterion=criterion,
-                                                                 logger_train=logger_train,
-                                                                 logger_val=logger_val, epochId=epochID,
-                                                                 max_val_auc=max_val_auc, scaler=scaler,
-                                                                 args=args)
+                                                     dataLoaderVal=dataLoaderVal,
+                                                     optimizer=optimizer, criterion=criterion,
+                                                     logger_train=logger_train,
+                                                     logger_val=logger_val, epochId=epochID,
+                                                     max_val_auc=max_val_auc, scaler=scaler,
+                                                     args=args)
         # Select the last saved model as it would work as the best model
         bestModel = max([int(''.join(i for i in x if i.isdigit())) for x in os.listdir(args.save_dir)])
         return bestModel
@@ -166,7 +157,7 @@ class CheXpertTrainer():
         return outAUROC
 
     @staticmethod
-    def test(model, dataLoaderTest, nnClassCount, checkpoint, class_names):
+    def test(model, dataLoaderTest, nnClassCount, checkpoint, class_names, test_logger):
 
         cudnn.benchmark = True
 
@@ -176,7 +167,6 @@ class CheXpertTrainer():
 
         outGT = torch.FloatTensor().to(DEVICE)
         outPRED = torch.FloatTensor().to(DEVICE)
-
         model.eval()
 
         with torch.no_grad():
@@ -184,12 +174,12 @@ class CheXpertTrainer():
                 input = input.to(DEVICE)
                 target = target.cuda()
                 outGT = torch.cat((outGT, target), 0).to(DEVICE)
-
                 out = model(input)
+
                 outPRED = torch.cat((outPRED, out), 0)
         aurocIndividual = CheXpertTrainer.computeAUROC(outGT, outPRED, nnClassCount)
         aurocMean = np.array(aurocIndividual).mean()
-
+        # test_logger.add_embedding(mat=model.get_embedding(), metadata=class_names)
         print('AUROC mean ', aurocMean)
 
         for i in range(0, len(aurocIndividual)):
@@ -204,59 +194,31 @@ class CheXpertTrainer():
                        'Pleural Effusion', 'Pleural Other', 'Fracture', 'Support Devices']
 
         nn_class_count = len(class_names)
-        data_loader, label_weights = data_loader_dict(uncertainty_labels=args.uncertainty_labels,
-                                                      batch_size=args.batch_size,
-                                                      num_workers=args.num_workers, build_grph=args.build_graph)
+        data_loader = data_loader_dict(uncertainty_labels=args.uncertainty_labels,
+                                       batch_size=args.batch_size,
+                                       num_workers=args.num_workers, build_grph=args.build_graph)
         model = create_model(args.model_type).to(DEVICE)
         args.class_count = nn_class_count
+        # SETTINGS: OPTIMIZER & SCHEDULER
+        optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        # Loss function formulation
+        criterion = WCELossFunc(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
         if args.mode == 'train':
             bestModelNumber = self.perform_train_val(model=model, dataLoaderTrain=data_loader['train'],
                                                      dataLoaderVal=data_loader['valid'], trMaxEpoch=args.max_epoch,
                                                      logdir=args.logdir, checkpoint=args.pretrained_checkpoint,
-                                                     label_weights=label_weights, lr=args.lr, args=args)
+                                                     optimizer=optimizer, args=args, criterion=criterion)
             print("Model trained")
         else:
             bestModelNumber = args.model_number
             print(f"Test mode with model {bestModelNumber}")
+        test_logger = SummaryWriter(os.path.join(args.logdir, 'test'))
         checkpoint = os.path.join(args.save_dir, 'model' + str(bestModelNumber) + '.pth')
-        self.plot_results(model=model, dataLoaderTest=data_loader['test'], nnClassCount=nn_class_count,
-                          checkpoint=checkpoint)
-
-    def plot_results(self, model, dataLoaderTest, nnClassCount, checkpoint):
         class_names = ['No Finding', 'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
                        'Lung Lesion', 'Edema', 'Consolidation', 'Pneumonia', 'Atelectasis', 'Pneumothorax',
                        'Pleural Effusion', 'Pleural Other', 'Fracture', 'Support Devices']
-        outGT1, outPRED1 = CheXpertTrainer.test(model=model, dataLoaderTest=dataLoaderTest, nnClassCount=nnClassCount,
-                                                checkpoint=checkpoint, class_names=class_names)
-
-        # outGT3, outPRED3 = CheXpertTrainer.test(model=model, dataLoaderTest=dataLoaderTest, nnClassCount=nnClassCount,
-        #                                         checkpoint="model_zeros.pth.tar", class_names=class_names)
-
-        for i in range(nnClassCount):
-            fpr, tpr, threshold = metrics.roc_curve(outGT1.cpu()[:, i], outPRED1.cpu()[:, i])
-            roc_auc = metrics.auc(fpr, tpr)
-            f = plt.subplot(2, 7, i + 1)
-            # fpr2, tpr2, threshold2 = metrics.roc_curve(outGT3.cpu()[:,i], outPRED3.cpu()[:,i])
-            # roc_auc2 = metrics.auc(fpr2, tpr2)
-
-            plt.title('ROC for: ' + class_names[i])
-            plt.plot(fpr, tpr, label='U-ones: AUC = %0.2f' % roc_auc)
-            # plt.plot(fpr2, tpr2, label='U-zeros: AUC = %0.2f' % roc_auc2)
-
-            plt.legend(loc='lower right')
-            plt.plot([0, 1], [0, 1], 'r--')
-            plt.xlim([0, 1])
-            plt.ylim([0, 1])
-            plt.ylabel('True Positive Rate')
-            plt.xlabel('False Positive Rate')
-
-        fig_size = plt.rcParams["figure.figsize"]
-        fig_size[0] = 30
-        fig_size[1] = 10
-        plt.rcParams["figure.figsize"] = fig_size
-
-        plt.savefig("ROC1345.png", dpi=1000)
-        plt.show()
+        self.test(model=model, dataLoaderTest=data_loader['test'], nnClassCount=nn_class_count,
+                  checkpoint=checkpoint, class_names=class_names, test_logger=test_logger)
 
 
 def set_seeds():
@@ -282,7 +244,9 @@ if __name__ == '__main__':
     args.schedule_after_epochs = parser['setup'].getint('schedule_after_epochs')
 
     args.uncertainty_labels = parser['data'].get('uncertainty_labels')
-    args.build_graph = True #args.model_type == 'base'
+    args.alpha = parser['data'].getfloat('alpha')
+    args.beta = parser['data'].getfloat('beta')
+    args.build_graph = True  # args.model_type == 'base'
     # Add some extra configurations
     args.pathFileTrain = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'train.csv')
     args.pathFileValid = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'valid.csv')
@@ -296,4 +260,10 @@ if __name__ == '__main__':
                                                   'model' + parser['setup'].get('continue_train_model_number') + '.pth')
     else:
         args.pretrained_checkpoint = None
+    if args.mode == 'train':
+        # Save the config state for easy reproducibility
+        with open(os.path.join(args.save_dir, 'config.ini'), 'w') as file:
+            parser.write(file)
+            print("config state written")
+
     CheXpertTrainer().run(args=args)
