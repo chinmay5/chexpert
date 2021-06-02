@@ -243,6 +243,7 @@ if __name__ == '__main__':
     args.pathFileTrain = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'train.csv')
     args.pathFileValid = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'valid.csv')
     args.logdir = os.path.join(PROJECT_ROOT_DIR, 'results', args.logdir, datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
+    args.conf_dir = os.path.join(PROJECT_ROOT_DIR, 'results', args.save_dir)
     args.save_dir = os.path.join(PROJECT_ROOT_DIR, 'results', args.save_dir, args.model_type)
     if not os.path.exists(args.logdir) or not os.path.exists(args.save_dir):
         os.makedirs(args.logdir, exist_ok=True)
@@ -254,7 +255,7 @@ if __name__ == '__main__':
         args.pretrained_checkpoint = None
     if args.mode == 'train':
         # Save the config state for easy reproducibility
-        with open(os.path.join(args.save_dir, 'config.ini'), 'w') as file:
+        with open(os.path.join(args.conf_dir, 'config.ini'), 'w') as file:
             parser.write(file)
             print("config state written")
 
