@@ -142,6 +142,7 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
     data_items['train'] = data_items_tr
     data_items['valid'] = data_items_va
     data_items['test'] = data_items_te
+    data_items['train_val'] = data_items_te[:len(data_items_va)]
 
     # [!] For overfitting!
     # data_items['train'] = data_items_tr[::100]
@@ -169,6 +170,8 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
                                  preprocess=True, shuffle=False),
         'test': get_data_loader(data_items=data_items, split='test', batch_size=batch_size, augment=False,
                                 preprocess=True, shuffle=False),
+        'train_val': get_data_loader(data_items=data_items, split='train_val', batch_size=batch_size, augment=False,
+                                preprocess=True, shuffle=False),
     }
 
     # The training set needs to be used for creating the graph in our baseline method. Hence, we save it here.
@@ -186,7 +189,7 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
 if __name__ == '__main__':
     parser = read_config()
     uncertainty_labels = parser['data'].get('uncertainty_labels')
-    data, weights = data_loader_dict(uncertainty_labels=uncertainty_labels, batch_size=64, num_workers=4)
+    data = data_loader_dict(uncertainty_labels=uncertainty_labels, batch_size=64, num_workers=4)
     train = data['train']
     for img, label in train:
         print(img.shape)

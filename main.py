@@ -36,7 +36,7 @@ class CheXpertTrainer():
         return lr
 
     @staticmethod
-    def epochTrain(model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId,
+    def epochTrain(model, dataLoader_train, dataLoaderVal, dataLoaderTrainVal, optimizer, criterion, logger_train, logger_val, epochId,
                    max_val_auc, args):
 
         model.train()
@@ -53,13 +53,15 @@ class CheXpertTrainer():
             optimizer.step()
 
             l = lossvalue.item()
-
+            step = (epochId * len(dataLoader_train)) + batchID  # Use the same step for logging
+            logger_train.add_scalar(tag="loss", scalar_value=l, global_step=step)
             if batchID % 1000 == 999:
-                step = (epochId * len(dataLoader_train)) + batchID  # Use the same step for logging
-                logger_train.add_scalar(tag="loss", scalar_value=l, global_step=step)
                 le, val_auc = CheXpertTrainer.epochVal(model=model, dataLoader=dataLoaderVal, loss=criterion, args=args)
-                logger_val.add_scalar(tag="loss", scalar_value=le.item(), global_step=step)
+                logger_val.add_scalar(tag="loss", scalar_value=le, global_step=step)
                 logger_val.add_scalar(tag="mean_auc", scalar_value=val_auc, global_step=step)
+                # We also put in the training mean_auc to compare. For this, we use a subset of train samples
+                _, train_auc = CheXpertTrainer.epochVal(model=model, dataLoader=dataLoaderTrainVal, loss=criterion, args=args)
+                logger_train.add_scalar(tag="mean_auc", scalar_value=train_auc, global_step=step)
                 # Put the model back in training mode
                 model.train()
                 if val_auc > max_val_auc:
@@ -94,7 +96,7 @@ class CheXpertTrainer():
                 varOutput = model(varInput)
 
                 losstensor = loss(varOutput, target)
-                lossVal += losstensor
+                lossVal += losstensor.item()
                 lossValNorm += 1
 
                 outPRED = torch.cat((outPRED, varOutput), 0)
@@ -106,7 +108,7 @@ class CheXpertTrainer():
         return outLoss, aurocMean
 
     @staticmethod
-    def perform_train_val(model, dataLoaderTrain, dataLoaderVal, trMaxEpoch, logdir, checkpoint, args, optimizer, criterion):
+    def perform_train_val(model, dataLoaderTrain, dataLoaderVal, dataLoaderTrainVal, trMaxEpoch, logdir, checkpoint, args, optimizer, criterion):
 
         # LOAD CHECKPOINT
         if checkpoint != None:
@@ -125,6 +127,7 @@ class CheXpertTrainer():
             # (model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId
             max_val_auc = CheXpertTrainer.epochTrain(model=model, dataLoader_train=dataLoaderTrain,
                                                      dataLoaderVal=dataLoaderVal,
+                                                     dataLoaderTrainVal=dataLoaderTrainVal,
                                                      optimizer=optimizer, criterion=criterion,
                                                      logger_train=logger_train,
                                                      logger_val=logger_val, epochId=epochID,
@@ -192,13 +195,14 @@ class CheXpertTrainer():
         model = create_model(args.model_type).to(DEVICE)
         args.class_count = nn_class_count
         # SETTINGS: OPTIMIZER & SCHEDULER
-        optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
         # Loss function formulation
         criterion = WCELossFuncMy(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
         if args.mode == 'train':
             bestModelNumber = self.perform_train_val(model=model, dataLoaderTrain=data_loader['train'],
-                                                     dataLoaderVal=data_loader['valid'], trMaxEpoch=args.max_epoch,
-                                                     logdir=args.logdir, checkpoint=args.pretrained_checkpoint,
+                                                     dataLoaderVal=data_loader['valid'], dataLoaderTrainVal=data_loader['train_val'],
+                                                     trMaxEpoch=args.max_epoch, logdir=args.logdir, checkpoint=args.pretrained_checkpoint,
                                                      optimizer=optimizer, args=args, criterion=criterion)
             print("Model trained")
         else:

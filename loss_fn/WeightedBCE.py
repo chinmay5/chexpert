@@ -39,20 +39,28 @@ class WCELossFuncMy(nn.Module):
         self.beta = beta
         self.num_class = num_class
 
-    def forward(self, scores, target):
-        pos_count = torch.sum(target)
-        total = target.size(0) * target.size(1)
-        weight_factor = (total - pos_count) / pos_count
-        pos_weight = torch.ones(target.size(1), device=target.device) * weight_factor
-        loss = F.binary_cross_entropy_with_logits(scores, target, pos_weight=pos_weight, reduction="none")
-        pt = torch.exp(-loss)
-        F_loss = self.alpha * (1-pt)**self.beta * loss
-        return torch.mean(F_loss)
+    def forward(self, output, target):
+        pos_count = torch.sum(target) + 1
+        total = target.size(0) * target.size(1) + 1
+        weight_pos = total / pos_count  # weight is neg/pos
+        weight_neg = total / (total - pos_count + 1)  # weight is neg/pos
+        output = torch.sigmoid(output)
+        output = output.clamp(min=1e-5, max=1-1e-5)
+
+        loss = -weight_pos * (target * torch.log(output)) * torch.pow((1 - output), self.beta) - \
+               torch.pow(output, self.beta) * weight_neg * ((1 - target) * torch.log(1 - output))
+        return torch.mean(loss)
+        # pos_weight = torch.ones(target.size(1), device=target.device) * weight_factor
+        # loss = F.binary_cross_entropy_with_logits(scores, target, pos_weight=pos_weight, reduction="none")
+        # pt = torch.exp(-loss)
+        # F_loss = self.alpha * (1-pt)**self.beta * loss
+        # return torch.mean(F_loss)
+        # return F.binary_cross_entropy_with_logits(scores, target, pos_weight=pos_weight)
 
 
 if __name__ == '__main__':
-    alpha = 0.1
-    beta = 0.7
+    alpha = 0.25
+    beta = 2
     num_class = 14
     weight_neg = 20
     weight_pos = 25
@@ -62,3 +70,5 @@ if __name__ == '__main__':
     logits = torch.randn((8, 14)).cuda()
     l1 = loss1(logits, y_labels)
     l2 = loss2(logits, y_labels)
+    print(l1)
+    print(l2)

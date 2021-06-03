@@ -22,8 +22,9 @@ class BaseGNNModel(nn.Module):
         # Create the graph based on label co-occurrences
         create_graph_data_object(debug=False)
         self.graph_data = torch.load(os.path.join(PROJECT_ROOT_DIR, 'models', 'graph_base', 'base_graph.pth'))
-        self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, add_self_loops=False)  # Since self loop already present
-        self.conv2 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, add_self_loops=False)
+        self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=text_feat_dim, add_self_loops=True)  # Since self loop already present
+        self.conv2 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, add_self_loops=True)  # Since self loop already present
+        self.conv3 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, add_self_loops=True)
 
     def forward(self, image):
         img_feat = self.visual_feature_extractor(image)
@@ -33,11 +34,11 @@ class BaseGNNModel(nn.Module):
         node_features = self.graph_data.x
         edge_weight = self.graph_data.edge_attr
         # Perform graph convolutions
-        x = self.conv1(x=node_features, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
-        # x = self.conv1(x=node_features, edge_index=edge_index)  # W, 1024
+        x = self.conv1(x=node_features, edge_index=edge_index, edge_weight=edge_weight)  # W, 300
         x = F.leaky_relu(x, negative_slope=0.2)
         x = self.conv2(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
-        # x = self.conv2(x=x, edge_index=edge_index)  # W, 1664
+        x = F.leaky_relu(x, negative_slope=0.2)
+        x = self.conv3(x=x, edge_index=edge_index, edge_weight=edge_weight)
         # img_feat = B, 1664, x = W, 1664
         x = torch.mm(img_feat, x.transpose(0, 1))
         return x
