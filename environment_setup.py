@@ -19,3 +19,8 @@ threshold_dict = {
     "positive": 0.3,
     "negative": 0.3
 }
+
+lambda_dict = {
+    "positive": 0.3,
+    "negative": 0.1
+}

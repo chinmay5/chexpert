@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 # from dataset.ChexpertDataset import CheXpertDataSet
 from dataset.ChexpertDataset import ChexDataset
-from environment_setup import PROJECT_ROOT_DIR, read_config, threshold_dict
+from environment_setup import PROJECT_ROOT_DIR, read_config, threshold_dict, lambda_dict
 
 # combine all column values into a list
 
@@ -33,12 +33,12 @@ label_columns = [
     'Support Devices'
 ]
 
-labda = parser = read_config()['data'].getfloat('labda')
 
 
 def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     complete_label_list = []
     threshold = threshold_dict[uncertainty_labels]
+    labda = lambda_dict[uncertainty_labels]
     # Iterate over all the labels present in the form of a list of tuple
     for _, label in tqdm(train_data_items):
         label_arr_np = np.array(label)
@@ -59,7 +59,7 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
 
             if i == j:
                 # along the diagonal, save its frequency
-                co_occur_mat[i, j] = np.sum(labels_mat[:,i])
+                co_occur_mat[i, j] = np.sum(labels_mat[:, i])
             else:
                 # temp only has the columns for 'i' and 'j' labels
                 a = np.zeros_like(labels_mat)
@@ -75,20 +75,16 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     co_occur_directional = (co_occur_mat/np.diag(co_occur_mat).reshape(-1,1))
     # First threshold
     co_occur_directional[co_occur_directional < threshold] = 0
+    co_occur_directional[co_occur_directional >= threshold] = 1
+    # Smoothing effects as suggested
+    co_occur_directional = co_occur_directional * labda / (co_occur_directional.sum(0, keepdims=True) + 1e-6)
+    for i in range(14):
+        co_occur_directional[i, i] = 1 - labda
     # Now we need to normalize
     # col_sum = np.sum(co_occur_directional, axis=0)
     # co_occur_directional = labda * co_occur_directional / (col_sum.reshape(-1, 1) + 1e-6)
 
-    # We can also compute the weights for loss function
-    all_samples = len(labels_mat)
-    pos_weight = torch.as_tensor(
-        (all_samples + 1) / (np.sum(labels_mat, axis=0) + 1)
-    )
-    neg_weight = torch.as_tensor(
-        (all_samples + 1) / (np.sum(1 - labels_mat, axis=0) + 1)
-    )
-    weights = [pos_weight, neg_weight]
-    return co_occur_mat, co_occur_directional, weights
+    return co_occur_mat, co_occur_directional
 
 
 def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4, build_grph=True):
@@ -146,11 +142,12 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
     data_items['train'] = data_items_tr
     data_items['valid'] = data_items_va
     data_items['test'] = data_items_te
+    data_items['train_val'] = data_items_te[:len(data_items_va)]
 
     # [!] For overfitting!
-    data_items['train'] = data_items_tr[::100]
-    data_items['valid'] = data_items_va[::10]
-    data_items['test']  = data_items_te[::10]
+    # data_items['train'] = data_items_tr[::100]
+    # data_items['valid'] = data_items_va[::10]
+    # data_items['test']  = data_items_te[::10]
 
     def get_data_loader(data_items, split, batch_size, augment, preprocess, shuffle=True):
         data_items = data_items[split]
@@ -173,18 +170,20 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
                                  preprocess=True, shuffle=False),
         'test': get_data_loader(data_items=data_items, split='test', batch_size=batch_size, augment=False,
                                 preprocess=True, shuffle=False),
+        'train_val': get_data_loader(data_items=data_items, split='train_val', batch_size=batch_size, augment=False,
+                                preprocess=True, shuffle=False),
     }
-    weights = None
+
     # The training set needs to be used for creating the graph in our baseline method. Hence, we save it here.
     if build_grph:
-        co_occur_mat, co_occur_directional, weights = build_cooccurence(train_data_items=data_items['train'],
+        co_occur_mat, co_occur_directional = build_cooccurence(train_data_items=data_items['train'],
                                                                LABELS=label_columns,
                                                                uncertainty_labels=uncertainty_labels)
         np.save(os.path.join(PROJECT_ROOT_DIR, "models", "graph_base", "co_occur_mat.npy"), co_occur_mat)
         np.save(os.path.join(PROJECT_ROOT_DIR, "models", "graph_base", "co_occur_directional.npy"), co_occur_directional)
 
     print('[*] Finished everything concerned with data loading!')
-    return data_iter, weights
+    return data_iter
 
 
 if __name__ == '__main__':

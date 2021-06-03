@@ -26,7 +26,8 @@ def create_model(model_type):
         hidden_dim = configs[model_type].getint('hidden_dim')
         out_channels = configs[model_type].getint('out_channels')
         dropout_p = configs[model_type].getfloat('dropout_p')
+        load_model_num = configs[model_type].getint('load_model_num', fallback=None)
         return BaseGNNModel(in_channels=in_channels, text_feat_dim=text_feat_dim, hidden_dim=hidden_dim,
-                            out_channels=out_channels, dropout_p=dropout_p)
+                            out_channels=out_channels, dropout_p=dropout_p, load_model_num=load_model_num)
     else:
         raise AttributeError("Invalid Model type selected")
