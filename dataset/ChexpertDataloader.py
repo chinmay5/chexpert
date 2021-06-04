@@ -79,7 +79,7 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     # Smoothing effects as suggested
     co_occur_directional = co_occur_directional * labda / (co_occur_directional.sum(0, keepdims=True) + 1e-6)
     for i in range(14):
-        co_occur_directional[i, i] = 1 - labda
+        co_occur_directional[i, i] += 1
     # Now we need to normalize
     # col_sum = np.sum(co_occur_directional, axis=0)
     # co_occur_directional = labda * co_occur_directional / (col_sum.reshape(-1, 1) + 1e-6)
