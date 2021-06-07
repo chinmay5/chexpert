@@ -25,7 +25,8 @@ class BaseGNNModel(nn.Module):
         self.graph_data = torch.load(os.path.join(PROJECT_ROOT_DIR, 'models', 'graph_base', 'base_graph.pth'))
         self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=text_feat_dim, add_self_loops=True)  # Since self loop already present
         self.conv2 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, add_self_loops=True)  # Since self loop already present
-        self.conv3 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, add_self_loops=True)
+        self.conv3 = GCNConv(in_channels=hidden_dim, out_channels=hidden_dim, add_self_loops=True)  # Since self loop already present
+        self.conv4 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, add_self_loops=True)  # Since self loop already present
 
     def forward(self, image):
         img_feat = self.visual_feature_extractor(image)
@@ -39,7 +40,9 @@ class BaseGNNModel(nn.Module):
         x = F.leaky_relu(x, negative_slope=0.2)
         x = self.conv2(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
         x = F.leaky_relu(x, negative_slope=0.2)
-        x = self.conv3(x=x, edge_index=edge_index, edge_weight=edge_weight)
+        x = self.conv3(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
+        x = F.leaky_relu(x, negative_slope=0.2)
+        x = self.conv4(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
         # img_feat = B, 1664, x = W, 300
         x = torch.mm(img_feat, x.transpose(0, 1))
         return x
@@ -134,6 +137,6 @@ class GCNBaseline(nn.Module):
 if __name__ == '__main__':
     x = torch.randn(4, 1, 512, 512)
     y = torch.as_tensor([0, 1, 0, 1])
-    model = GCNBaseline(text_feat_dim=200, in_channels=1)
+    model = BaseGNNModel(text_feat_dim=200, in_channels=1)
     out = model(x)
     print(out.shape)

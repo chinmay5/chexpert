@@ -3,7 +3,7 @@ import pickle
 
 import os
 
-from dataset.ChexpertDataloader import label_columns
+from dataset.chexpert.ChexpertDataloader import label_columns
 from environment_setup import PROJECT_ROOT_DIR
 from models.language_processing.word_embedding_model import WordEmbeddingModel
 import numpy as np

@@ -5,17 +5,15 @@ import random
 import torch
 import numpy as np
 
-import sklearn.metrics as metrics
 from dotmap import DotMap
-from matplotlib import pyplot as plt
 from sklearn.metrics import roc_auc_score
-from torch import optim, nn
+from torch import optim
 from torch.backends import cudnn
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset.ChexpertDataloader import data_loader_dict
+from dataset.chexpert.ChexpertDataloader import data_loader_dict
 from environment_setup import PROJECT_ROOT_DIR, read_config
-from loss_fn.WeightedBCE import WCELossFunc, WCELossFuncMy
+from loss_fn.WeightedBCE import WCELossFuncMy
 from models.model_factory import create_model
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -195,7 +193,7 @@ class CheXpertTrainer():
         model = create_model(args.model_type).to(DEVICE)
         args.class_count = nn_class_count
         # SETTINGS: OPTIMIZER & SCHEDULER
-        # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
         # Loss function formulation
         criterion = WCELossFuncMy(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
