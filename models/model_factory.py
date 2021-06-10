@@ -1,7 +1,7 @@
 from environment_setup import read_config
 from models.cnn_base.densenet import DenseNet121
 from models.graph_base.base_model import BaseGNNModel
-from models.our_method.graph_model import GNNNetwork
+from models.graph_extra_labels.graph_model import GNNNetwork
 
 
 def create_model(model_type):
@@ -29,5 +29,7 @@ def create_model(model_type):
         load_model_num = configs[model_type].getint('load_model_num', fallback=None)
         return BaseGNNModel(in_channels=in_channels, text_feat_dim=text_feat_dim, hidden_dim=hidden_dim,
                             out_channels=out_channels, dropout_p=dropout_p, load_model_num=load_model_num)
+        # return GCNBaseline(in_channels=in_channels, text_feat_dim=text_feat_dim, hidden_dim=hidden_dim,
+        #                    out_channels=out_channels, dropout_p=dropout_p, load_model_num=load_model_num)
     else:
         raise AttributeError("Invalid Model type selected")

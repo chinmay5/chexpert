@@ -8,7 +8,7 @@ from torch_geometric.data import Data
 
 import networkx as nx
 
-from dataset.ChexpertDataloader import label_columns
+from dataset.chexpert.ChexpertDataloader import label_columns
 from environment_setup import PROJECT_ROOT_DIR, read_config
 
 import plotly.graph_objects as go

@@ -1,17 +1,13 @@
 import os
-import pickle
-from configparser import ConfigParser
 
 import pandas as pd
-import torch
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
-from torchvision.transforms import transforms
 import numpy as np
 from tqdm import tqdm
 
 # from dataset.ChexpertDataset import CheXpertDataSet
-from dataset.ChexpertDataset import ChexDataset
+from dataset.chexpert.ChexpertDataset import ChexDataset
 from environment_setup import PROJECT_ROOT_DIR, read_config, threshold_dict, lambda_dict
 
 # combine all column values into a list
@@ -79,7 +75,7 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     # Smoothing effects as suggested
     co_occur_directional = co_occur_directional * labda / (co_occur_directional.sum(0, keepdims=True) + 1e-6)
     for i in range(14):
-        co_occur_directional[i, i] = 1 - labda
+        co_occur_directional[i, i] += 1
     # Now we need to normalize
     # col_sum = np.sum(co_occur_directional, axis=0)
     # co_occur_directional = labda * co_occur_directional / (col_sum.reshape(-1, 1) + 1e-6)
@@ -142,7 +138,7 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
     data_items['train'] = data_items_tr
     data_items['valid'] = data_items_va
     data_items['test'] = data_items_te
-    data_items['train_val'] = data_items_te[:len(data_items_va)]
+    data_items['train_val'] = data_items_tr[:len(data_items_va)]
 
     # [!] For overfitting!
     # data_items['train'] = data_items_tr[::100]

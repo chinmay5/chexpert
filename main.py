@@ -5,17 +5,15 @@ import random
 import torch
 import numpy as np
 
-import sklearn.metrics as metrics
 from dotmap import DotMap
-from matplotlib import pyplot as plt
 from sklearn.metrics import roc_auc_score
-from torch import optim, nn
+from torch import optim
 from torch.backends import cudnn
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset.ChexpertDataloader import data_loader_dict
+from dataset.chexpert.ChexpertDataloader import data_loader_dict
 from environment_setup import PROJECT_ROOT_DIR, read_config
-from loss_fn.WeightedBCE import WCELossFunc, WCELossFuncMy
+from loss_fn.WeightedBCE import WCELossFuncMy
 from models.model_factory import create_model
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,7 +53,7 @@ class CheXpertTrainer():
             l = lossvalue.item()
             step = (epochId * len(dataLoader_train)) + batchID  # Use the same step for logging
             logger_train.add_scalar(tag="loss", scalar_value=l, global_step=step)
-            if batchID % 1000 == 999:
+            if batchID % args.print_after_iter == (args.print_after_iter - 1):
                 le, val_auc = CheXpertTrainer.epochVal(model=model, dataLoader=dataLoaderVal, loss=criterion, args=args)
                 logger_val.add_scalar(tag="loss", scalar_value=le, global_step=step)
                 logger_val.add_scalar(tag="mean_auc", scalar_value=val_auc, global_step=step)
@@ -195,8 +193,8 @@ class CheXpertTrainer():
         model = create_model(args.model_type).to(DEVICE)
         args.class_count = nn_class_count
         # SETTINGS: OPTIMIZER & SCHEDULER
-        # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
+        # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
         # Loss function formulation
         criterion = WCELossFuncMy(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
         if args.mode == 'train':
@@ -229,10 +227,12 @@ if __name__ == '__main__':
     args.max_epoch = parser['setup'].getint('max_epoch')
     args.batch_size = parser['setup'].getint('batch_size')
     args.num_workers = parser['setup'].getint('num_workers')
+    args.print_after_iter = parser['setup'].getint('print_after_iter')
     args.model_type = parser['setup'].get('model_type')
     args.logdir = parser['setup'].get('log_dir')
     args.save_dir = parser['setup'].get('save_dir')
     args.lr = parser['setup'].getfloat('lr')
+    args.weight_decay = parser['setup'].getfloat('weight_decay')
     args.mode = parser['setup'].get('mode')
     args.model_number = parser['setup'].getint('model_number')
     args.lr_schedule = parser['setup'].getboolean('lr_schedule')
