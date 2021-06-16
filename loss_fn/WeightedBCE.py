@@ -50,13 +50,6 @@ class WCELossFuncMy(nn.Module):
         loss = -weight_pos * (target * torch.log(output)) * torch.pow((1 - output), self.beta) - \
                torch.pow(output, self.beta) * weight_neg * ((1 - target) * torch.log(1 - output))
         return torch.mean(loss)
-        # pos_weight = torch.ones(target.size(1), device=target.device) * weight_factor
-        # loss = F.binary_cross_entropy_with_logits(scores, target, pos_weight=pos_weight, reduction="none")
-        # pt = torch.exp(-loss)
-        # F_loss = self.alpha * (1-pt)**self.beta * loss
-        # return torch.mean(F_loss)
-        # return F.binary_cross_entropy_with_logits(scores, target, pos_weight=pos_weight)
-
 
 if __name__ == '__main__':
     alpha = 0.25

@@ -1,4 +1,5 @@
 import os
+import time
 
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -30,7 +31,6 @@ label_columns = [
 ]
 
 
-
 def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     complete_label_list = []
     threshold = threshold_dict[uncertainty_labels]
@@ -50,12 +50,14 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     labels_mat = np.stack(complete_label_list)
     co_occur_mat = np.zeros((len(LABELS), len(LABELS)))
 
+    _num_occurrences = np.sum(labels_mat, axis=0)
+    _num_occurrences = _num_occurrences[:, np.newaxis]
     for i in range(len(LABELS)):
         for j in range(len(LABELS)):
 
             if i == j:
-                # along the diagonal, save its frequency
-                co_occur_mat[i, j] = np.sum(labels_mat[:, i])
+                # along the diagonal
+                co_occur_mat[i, j] = 0
             else:
                 # temp only has the columns for 'i' and 'j' labels
                 a = np.zeros_like(labels_mat)
@@ -68,14 +70,13 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
                 # Because of symmetry of the matrix
                 co_occur_mat[i, j] = freq_ij
     # normalise based on causality
-    co_occur_directional = (co_occur_mat/np.diag(co_occur_mat).reshape(-1,1))
+    co_occur_directional = (co_occur_mat / _num_occurrences)
     # First threshold
     co_occur_directional[co_occur_directional < threshold] = 0
     co_occur_directional[co_occur_directional >= threshold] = 1
     # Smoothing effects as suggested
     co_occur_directional = co_occur_directional * labda / (co_occur_directional.sum(0, keepdims=True) + 1e-6)
-    for i in range(14):
-        co_occur_directional[i, i] += 1
+    co_occur_directional = co_occur_directional + np.identity(len(label_columns), np.int)
     # Now we need to normalize
     # col_sum = np.sum(co_occur_directional, axis=0)
     # co_occur_directional = labda * co_occur_directional / (col_sum.reshape(-1, 1) + 1e-6)
@@ -83,10 +84,12 @@ def build_cooccurence(train_data_items, LABELS, uncertainty_labels):
     return co_occur_mat, co_occur_directional
 
 
-def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4, build_grph=True):
+def get_chexpert_data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4, build_grph=True):
     pd.set_option('mode.chained_assignment', None)
     # load train list
     all_data = pd.read_csv(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'CheXpert-v1.0-small', 'train.csv'))
+    # We need to select only the frontal images
+    all_data = all_data.loc[all_data['Frontal/Lateral'] == 'Frontal']
     # Drop the non required columns
     relevant_data = all_data.drop(['Sex', 'Age', 'Frontal/Lateral', 'AP/PA'], axis=1)
     # Fill all missing labels with 0.
@@ -122,11 +125,11 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
 
     te_keys, va_keys, tr_keys = np.split(tr_keys, [test_size, test_size + val_size])
 
-    data_items_tr = [(key,data_dict_certain[key]) for key in tr_keys]
+    data_items_tr = [(key, data_dict_certain[key]) for key in tr_keys]
 
-    data_items_va = [(key,data_dict_certain[key]) for key in va_keys]
+    data_items_va = [(key, data_dict_certain[key]) for key in va_keys]
 
-    data_items_te = [(key,data_dict_certain[key]) for key in te_keys]
+    data_items_te = [(key, data_dict_certain[key]) for key in te_keys]
 
     # now add 'uncertain' to train only.
     tr_keys = list(data_dict_uncertain.keys())
@@ -167,7 +170,7 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
         'test': get_data_loader(data_items=data_items, split='test', batch_size=batch_size, augment=False,
                                 preprocess=True, shuffle=False),
         'train_val': get_data_loader(data_items=data_items, split='train_val', batch_size=batch_size, augment=False,
-                                preprocess=True, shuffle=False),
+                                     preprocess=True, shuffle=False),
     }
 
     # The training set needs to be used for creating the graph in our baseline method. Hence, we save it here.
@@ -176,7 +179,8 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
                                                                LABELS=label_columns,
                                                                uncertainty_labels=uncertainty_labels)
         np.save(os.path.join(PROJECT_ROOT_DIR, "models", "graph_base", "co_occur_mat.npy"), co_occur_mat)
-        np.save(os.path.join(PROJECT_ROOT_DIR, "models", "graph_base", "co_occur_directional.npy"), co_occur_directional)
+        np.save(os.path.join(PROJECT_ROOT_DIR, "models", "graph_base", "co_occur_directional.npy"),
+                co_occur_directional)
 
     print('[*] Finished everything concerned with data loading!')
     return data_iter
@@ -185,13 +189,13 @@ def data_loader_dict(uncertainty_labels='positive', batch_size=64, num_workers=4
 if __name__ == '__main__':
     parser = read_config()
     uncertainty_labels = parser['data'].get('uncertainty_labels')
-    data = data_loader_dict(uncertainty_labels=uncertainty_labels, batch_size=64, num_workers=4)
+    data = get_chexpert_data_loader_dict(uncertainty_labels=uncertainty_labels, batch_size=64, num_workers=4)
     train = data['train']
-    for img, label in train:
+    for idx, (img, label) in tqdm(enumerate(data['train'])):
         print(img.shape)
         print(label.shape)
         print(label.dtype)
-        img = img[0].squeeze()
-        plt.imshow(img)
-        plt.show()
+        # img = img[0].squeeze()
+        # plt.imshow(img)
+        # plt.show()
         break

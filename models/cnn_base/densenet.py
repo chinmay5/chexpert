@@ -70,11 +70,10 @@ class DenseNet121(nn.Module):
         return self.classifier[0].weight
 
 
-
 class DenseNet161(nn.Module):
     """Model modified.
     The architecture of our model is the same as standard DenseNet121
-    except the classifier layer which has an additional sigmoid function.
+    except the classifier layer.
     """
 
     def __init__(self, in_channels, out_size, dropout_p, load_model_num=None):
@@ -133,12 +132,62 @@ class DenseNet161(nn.Module):
     def get_embedding(self):
         return self.classifier[0].weight
 
+
+class DenseNet121MultiView(nn.Module):
+    """Model modified.
+    The architecture of our model is the same as standard DenseNet121
+    except the classifier layer which has an additional sigmoid function.
+    """
+
+    def __init__(self, in_channels, out_size, dropout_p):
+        super(DenseNet121MultiView, self).__init__()
+        densenet121 = torchvision.models.densenet121(pretrained=True, drop_rate=dropout_p)
+        self.features = densenet121.features
+        self.change_input_channels(in_channels)
+        num_ftrs = densenet121.classifier.in_features
+        self.classifier = nn.Sequential(
+            nn.Linear(2 * num_ftrs, out_size)
+        )
+
+    def forward(self, data):
+        img1, img2 = data
+        img1_features = self.features(img1)
+        img1_features = F.relu(img1_features, inplace=True)
+        img1_features = F.adaptive_avg_pool2d(img1_features, (1, 1))
+        img1_features = torch.flatten(img1_features, 1)
+        # Same for the second image
+        img2_features = self.features(img2)
+        img2_features = F.relu(img2_features, inplace=True)
+        img2_features = F.adaptive_avg_pool2d(img2_features, (1, 1))
+        img2_features = torch.flatten(img2_features, 1)
+        # We concatenate these two
+        out = torch.cat([img1_features, img2_features], dim=1)
+        out = self.classifier(out)
+        return out
+
+    def change_input_channels(self, in_channels):
+        if in_channels == 3:
+            return  # No processing required
+        self.features.conv0.in_channels = in_channels
+        weight = self.features.conv0.weight.detach()
+        print(f"Updating pretrained weights for input channel. New size = {in_channels}")
+        if in_channels == 1:
+            self.features.conv0.weight = nn.parameter.Parameter(weight.sum(1, keepdim=True))
+        elif in_channels == 2:
+            self.features.conv0.weight = nn.parameter.Parameter(weight[:, :2] * (3.0 / 2.0))
+        else:
+            raise NotImplementedError(f"No Implementation for in_channels = {in_channels}")
+
+
 if __name__ == '__main__':
-    x = torch.randn((4, 1, 320, 320))
-    model = DenseNet121(in_channels=1, out_size=14, dropout_p=0.2, load_model_num=None)
-    out = model(x)
+    x = torch.randn((4, 1, 320, 320)).cuda()
+    model = DenseNet121MultiView(in_channels=1, out_size=14, dropout_p=0.2)
+    model.cuda()
+    out = model([x, x])
     print(out.shape)
     print(model.classifier[0].weight.shape)
+
+
     def check_model_size(model):
         num_params = 0
         traininable_param = 0
@@ -151,4 +200,6 @@ if __name__ == '__main__':
             "[Network  Total number of trainable parameters : %.3f M"
             % (traininable_param / 1e6)
         )
+
+
     check_model_size(model=model)
