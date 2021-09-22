@@ -1,10 +1,7 @@
-import csv
-
 import os
 import random
 
 import PIL
-import math
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -12,9 +9,11 @@ from torch.utils.data import Dataset
 import numpy as np
 from skimage import transform
 
+from dataset.data_utils import preprocess_fn, make_square, generate_perturbation_matrix_2D, augment_fn
 from environment_setup import PROJECT_ROOT_DIR, read_config
 
 img_base_path = os.path.join(PROJECT_ROOT_DIR, 'dataset')
+save_base_path = os.path.join(PROJECT_ROOT_DIR, 'dataset', 'chexpert', 'images')
 
 class ChexDataset(Dataset):
 
@@ -38,46 +37,35 @@ class ChexDataset(Dataset):
         self.img_size = read_config()['data'].getint('img_shape')
         print('[*] uMode:', self.uncertainty_labels)
 
-    def augment_fn(self, image):
-
-        if random.random() > 0.25:
-            tform = self.generate_perturbation_matrix_2D(max_t=0, max_s=1.4, min_s=0.7, max_r=5)
-            image = transform.warp(image, tform.inverse, order=3)
-
-        return image
-
-    def preprocess_fn(self, x):
-        # stats computed in prepare_chexpert.ipynb
-        MEAN_chexpert = 129.09964561039797
-        STD_chexpert = 73.81427725645409
-
-        x = x - MEAN_chexpert
-        x = x / STD_chexpert
-
-        return x
-
     def __getitem__(self, i):
 
         data_item = self.data_items[i]
-        img_path = data_item[0]
+        img_path_raw = data_item[0]
         img_label = data_item[1]
-        # read data
-        image = np.asarray(PIL.Image.open(os.path.join(img_base_path, img_path)))
         labels = np.array(img_label)
-        # -- process image
-
-        # Pad appropriately to make it of square shape
-        image = self.make_square(image, shape=(self.img_size, self.img_size))
+        # NOTE: Use this section when changing the image size. For the sake of speed, I preprocessed the input if it is
+        # of a fixed size and simply load the numpy arrays.
+        # read data
+        # image = np.asarray(PIL.Image.open(os.path.join(img_base_path, img_path)))
+        # labels = np.array(img_label)
+        # # -- process image
+        #
+        # # Pad appropriately to make it of square shape
+        # image = make_square(image, shape=(self.img_size, self.img_size))
+        #
+        # new_img_name = img_path.replace("/", "_")
+        # new_img_name = new_img_name[:new_img_name.find(".jpg")]
+        # np.save(os.path.join(save_base_path, f"{new_img_name}.npy"), image)
+        img_path = img_path_raw.replace("/", "_")
+        image = np.load(os.path.join(save_base_path, f"{img_path[:img_path.find('.jpg')]}.npy"))
 
         # apply augmentations
         if self.augment:
-            image = self.augment_fn(image=image)
+            image = augment_fn(image=image)
 
         # apply preprocessinging
         if self.preprocess:
-            image = self.preprocess_fn(x=image)
-
-        # -- process labels
+            image = preprocess_fn(x=image)
 
         # how to handle uncertain labels? for ex: u-positive or u-negative
         if self.uncertainty_labels == 'negative':
@@ -89,49 +77,8 @@ class ChexDataset(Dataset):
         # Convert them to tensors and add an extra channel for the image
         image = torch.as_tensor(image, dtype=torch.float32).unsqueeze(0)
         labels = torch.as_tensor(labels)
-        return image, labels
+
+        return image, labels, img_path_raw
 
     def __len__(self):
         return len(self.data_items)
-
-    def generate_perturbation_matrix_2D(self, max_t=5, max_s=1.4, min_s=0.7, max_r=5):
-
-        # translation
-        tx = np.random.uniform(-max_t, max_t)
-        ty = np.random.uniform(-max_t, max_t)
-
-        # scaling
-        sx = np.random.uniform(min_s, max_s)
-        sy = np.random.uniform(min_s, max_s)
-
-        # rotation
-        r = (math.pi / 180) * np.random.uniform(-max_r, max_r)  # x-roll (w.r.t x-axis)
-
-        # Generate perturbation matrix
-
-        tform = transform.AffineTransform(scale=(sx, sy),
-                                          rotation=r,
-                                          translation=(tx, ty))
-
-        return tform
-
-    def make_square(self, image, shape):
-        h, w = image.shape
-        if h < w:
-            diff = w - h
-            if diff % 2 == 0:
-                pad = (diff // 2, diff // 2)
-            else:
-                pad = (diff // 2 + 1, diff // 2)
-            image = np.pad(image, pad_width=(pad, (0, 0)))
-        elif h > w:
-            diff = h - w
-            if diff % 2 == 0:
-                pad = (diff // 2, diff // 2)
-            else:
-                pad = (diff // 2 + 1, diff // 2)
-            image = np.pad(image, pad_width=((0, 0), pad))
-
-        image = transform.resize(image, shape, order=1, preserve_range=True, anti_aliasing=True)
-
-        return image

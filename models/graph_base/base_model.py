@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 import os
 
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, GraphConv
 
 from environment_setup import PROJECT_ROOT_DIR
 from models.cnn_base.densenet import DenseNet161
@@ -23,10 +23,11 @@ class BaseGNNModel(nn.Module):
         # Create the graph based on label co-occurrences
         create_graph_data_object(debug=False)
         self.graph_data = torch.load(os.path.join(PROJECT_ROOT_DIR, 'models', 'graph_base', 'base_graph.pth'))
-        self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=text_feat_dim, add_self_loops=True)  # Since self loop already present
-        self.conv2 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, add_self_loops=True)  # Since self loop already present
-        self.conv3 = GCNConv(in_channels=hidden_dim, out_channels=hidden_dim, add_self_loops=True)  # Since self loop already present
-        self.conv4 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, add_self_loops=True)  # Since self loop already present
+        # self.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, flow='target_to_source')  # Since self loop already present
+        # self.conv2 = GCNConv(in_channels=hidden_dim, out_channels=out_channels, flow='target_to_source')  # Since self loop already presentself.conv1 = GCNConv(in_channels=text_feat_dim, out_channels=hidden_dim, add_self_loops=True)  # Since self loop already present
+        self.conv1 = GraphConv(in_channels=text_feat_dim, out_channels=hidden_dim, aggr='mean', flow='target_to_source')  # Since self loop already present
+        self.conv2 = GraphConv(in_channels=hidden_dim, out_channels=out_channels, aggr='mean', flow='target_to_source')  # Since self loop already present
+        # self.dropout = nn.Dropout()
 
     def forward(self, image):
         img_feat = self.visual_feature_extractor(image)
@@ -38,11 +39,8 @@ class BaseGNNModel(nn.Module):
         # Perform graph convolutions
         x = self.conv1(x=node_features, edge_index=edge_index, edge_weight=edge_weight)  # W, 300
         x = F.leaky_relu(x, negative_slope=0.2)
+        # x = self.dropout(x)
         x = self.conv2(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
-        x = F.leaky_relu(x, negative_slope=0.2)
-        x = self.conv3(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
-        x = F.leaky_relu(x, negative_slope=0.2)
-        x = self.conv4(x=x, edge_index=edge_index, edge_weight=edge_weight)  # W, 1024
         # img_feat = B, 1664, x = W, 300
         x = torch.mm(img_feat, x.transpose(0, 1))
         return x

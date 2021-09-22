@@ -13,8 +13,7 @@ class WordEmbeddingModel:
 
     @staticmethod
     def get_fast_text_embeddings(node_names):
-        model = downloader.load(
-            "fasttext-wiki-news-subwords-300")  # Same resource location as mentioned in the baseline model
+        model = downloader.load("fasttext-wiki-news-subwords-300")  # Same resource location as mentioned in the baseline model
         vector_repr_dict = dict()
 
         for disease in node_names:
@@ -38,8 +37,9 @@ class WordEmbeddingModel:
             # return model.get_vector(word, norm=True)
             return model[word]
         except KeyError:
-            print(f"WARNING: no embeddings found for {word}, using UNK instead!!!")
-            return model.get_vector("unk", norm=True)
+            print(f"WARNING: no embeddings found for {word}, skipping!!!")
+            # return model.get_vector("unk", norm=True)
+            return None
 
     @staticmethod
     def get_embedding(node_names, strategy="fast"):
@@ -59,5 +59,15 @@ class WordEmbeddingModel:
         vector_repr_dict = dict()
         for disease in node_names:
             words = disease.lower().split()
-            vector_repr_dict[disease] = np.mean([WordEmbeddingModel.get_word_embed(model, word) for word in words], axis=0)
+            final_embed = []
+            for word in words:
+                bio_embed_for_word = WordEmbeddingModel.get_word_embed(model, word)
+                if bio_embed_for_word is not None:
+                    final_embed.append(bio_embed_for_word)
+            # If no match found for the entire disease name, it implies that we essentially have a situation in which
+            #  the node name is most likely invalid. Hence, we should ignore it and consider it 'noise'
+            if len(final_embed) == 0:
+                print(f"Found an invalid combination {disease}")
+                raise AttributeError("The disease name should have been pruned")
+            vector_repr_dict[disease] = np.mean(final_embed, axis=0)
         return vector_repr_dict

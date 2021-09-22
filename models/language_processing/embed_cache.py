@@ -2,6 +2,7 @@ import atexit
 import pickle
 
 import os
+from collections import defaultdict
 
 from dataset.chexpert.ChexpertDataloader import label_columns
 from environment_setup import PROJECT_ROOT_DIR
@@ -53,6 +54,13 @@ class EmbedCache(WordEmbeddingModel):
 
 
 if __name__ == '__main__':
+    import pandas as pd
     cache = EmbedCache(strategy="bio")
     embeds = cache.get_embedding(node_names=label_columns)
-    print(embeds.shape)
+    sim_dict = defaultdict(list)
+    for i in range(14):
+        for j in range(14):
+            src, dest = embeds[i], embeds[j]
+            sim_dict[label_columns[i]].append(np.dot(src, dest)/(np.linalg.norm(src) * np.linalg.norm(dest)))
+    df = pd.DataFrame.from_dict(data=sim_dict, columns=label_columns, orient='index')
+    df.to_csv(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'initial_match.csv'), index=True, float_format='%.3f')

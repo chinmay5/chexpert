@@ -16,11 +16,11 @@ def read_config():
 
 
 threshold_dict = {
-    "positive": 0.3,
+    "positive": 0.2,
     "negative": 0.3
 }
 
 lambda_dict = {
-    "positive": 0.3,
+    "positive": 0.25,
     "negative": 0.1
 }
