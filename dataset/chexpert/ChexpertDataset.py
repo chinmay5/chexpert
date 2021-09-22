@@ -11,7 +11,7 @@ from skimage import transform
 
 from torchvision.transforms import transforms
 
-from dataset.data_utils import preprocess_fn, make_square, generate_perturbation_matrix_2D, augment_fn
+from dataset.data_utils import augment_fn
 from environment_setup import PROJECT_ROOT_DIR, read_config
 
 img_base_path = os.path.join(PROJECT_ROOT_DIR, 'dataset')
@@ -33,6 +33,7 @@ class ChexDataset(Dataset):
         """
         self.data_items = data_items
         self.transforms = transforms.Compose([
+            transforms.ToTensor(),
             transforms.Normalize(
                 mean=[129.09964561039797], std=[73.81427725645409]
             )
@@ -54,13 +55,15 @@ class ChexDataset(Dataset):
         # read data
         image = PIL.Image.open(os.path.join(img_base_path, img_path))
         labels = np.array(img_label)
+        # Resize the image
+        image = transforms.Resize((self.img_size, self.img_size))(image)
         # apply augmentations
         if self.augment:
             image = augment_fn(image=image)
 
         # apply preprocessinging
         if self.preprocess:
-            image = preprocess_fn(x=image)
+            image = self.transforms(image)
 
         # how to handle uncertain labels? for ex: u-positive or u-negative
         if self.uncertainty_labels == 'negative':
