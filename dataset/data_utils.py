@@ -3,7 +3,7 @@ import random
 import math
 
 import numpy as np
-from skimage import transform
+from torchvision.transforms import transforms
 
 
 def preprocess_fn(x):
@@ -17,7 +17,7 @@ def preprocess_fn(x):
     return x
 
 
-def generate_perturbation_matrix_2D(max_t=5, max_s=1.4, min_s=0.7, max_r=5):
+def generate_random_affine(max_t=5, max_s=1.4, min_s=0.7, max_r=5):
     # translation
     tx = np.random.uniform(-max_t, max_t)
     ty = np.random.uniform(-max_t, max_t)
@@ -31,10 +31,7 @@ def generate_perturbation_matrix_2D(max_t=5, max_s=1.4, min_s=0.7, max_r=5):
 
     # Generate perturbation matrix
 
-    tform = transform.AffineTransform(scale=(sx, sy),
-                                      rotation=r,
-                                      translation=(tx, ty))
-
+    tform = transforms.RandomAffine(degrees=r, translate=(tx, ty), scale=(sx, sy))
     return tform
 
 
@@ -54,15 +51,13 @@ def make_square(image, shape):
         else:
             pad = (diff // 2 + 1, diff // 2)
         image = np.pad(image, pad_width=((0, 0), pad))
-
-    image = transform.resize(image, shape, order=1, preserve_range=True, anti_aliasing=True)
-
-    return image
+    # Apply the changed transformation
+    return transforms.Resize(shape)(image)
 
 
 def augment_fn(image):
     if random.random() > 0.25:
-        tform = generate_perturbation_matrix_2D(max_t=0, max_s=1.4, min_s=0.7, max_r=5)
-        image = transform.warp(image, tform.inverse, order=3)
+        tform = generate_random_affine(max_t=0, max_s=1.4, min_s=0.7, max_r=5)
+        image = tform(image)
 
     return image
