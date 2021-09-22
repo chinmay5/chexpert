@@ -185,7 +185,6 @@ def get_chexpert_data_loader_dict(uncertainty_labels='positive', batch_size=64, 
     print('[*] Finished everything concerned with data loading!')
     return data_iter
 
-
 if __name__ == '__main__':
     parser = read_config()
     uncertainty_labels = parser['data'].get('uncertainty_labels')
