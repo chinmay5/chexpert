@@ -10,16 +10,20 @@ from tqdm import tqdm
 import numpy as np
 
 from environment_setup import PROJECT_ROOT_DIR
-from models.our_method.graph_gen_utils import generate_dataset, cuid_map, CuidInfo
 
-english_cuid_dict = pickle.load(open(os.path.join(PROJECT_ROOT_DIR, "dataset", "giant_map.pkl"), "rb"))
+# Let us re-use few of the locations since it does not make sense to make a copy of at least the generic things
+# /home/chinmayp/workspace/chexpert/dataset
+from models.our_method.umls_generation.utils.graph_gen_utils import CuidInfo, convert_relations_to_graph, cuid_map
+from models.our_method.umls_generation.utils.graph_prune_utils import trim_nodes_and_store_cuid_graph
 
+valid_cuid_map = pickle.load(open(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", "giant_map.pkl"), "rb"))
 
 
 def my_rediculously_huge_umls_dict_par_chd():
     # NOTE: At this point, we are not taking into account the kind of relationship in the nodes
     the_huge_connectivity_dict = defaultdict(set)
-    with open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
+    # /home/chinmayp/workspace/chexpert/dataset
+    with open(os.path.join("/", "home", "chinmayp", "workspace", "chexpert", 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
         reader = csv.reader(file, delimiter='|')
         for row in tqdm(reader):
             if len(row[0]) == 0 or len(row[3]) == 0 or len(row[4]) == 0:
@@ -27,16 +31,17 @@ def my_rediculously_huge_umls_dict_par_chd():
                 continue
             # https://www.nlm.nih.gov/research/umls/knowledge_sources/metathesaurus/release/abbreviations.html#mrdoc_REL
             # We go for all relatiosn except del, no-mapping and self-related
-            if row[3] in ['PAR'] and all([row[0] in english_cuid_dict.keys(), row[4] in english_cuid_dict.keys()]):
+            if row[3] in ['PAR'] and all([row[0] in valid_cuid_map.keys(), row[4] in valid_cuid_map.keys()]):
                 the_huge_connectivity_dict[row[0]].add(CuidInfo(cuid=row[4], rel=row[3], rela=row[7]))
     pickle.dump(the_huge_connectivity_dict,
-                open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'huge_cuid_cuid_obj.pkl'), 'wb'))
+                open(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", 'huge_cuid_cuid_obj.pkl'), 'wb'))
 
 
 def my_rediculously_huge_umls_dict_all_rel():
     # NOTE: At this point, we are not taking into account the kind of relationship in the nodes
     the_huge_connectivity_dict = defaultdict(set)
-    with open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
+    # /home/chinmayp/workspace/chexpert/dataset
+    with open(os.path.join("/", "home", "chinmayp", "workspace", "chexpert", 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
         reader = csv.reader(file, delimiter='|')
         for row in tqdm(reader):
             if len(row[0]) == 0 or len(row[3]) == 0 or len(row[4]) == 0:
@@ -47,11 +52,11 @@ def my_rediculously_huge_umls_dict_all_rel():
             if row[3] in ['DEL', 'XR', 'RL']:
                 continue
             #   Add relations only when they contain some meaningful semantic information
-            if all([row[0] in english_cuid_dict.keys(), row[4] in english_cuid_dict.keys()]):
+            if all([row[0] in valid_cuid_map.keys(), row[4] in valid_cuid_map.keys()]):
                 the_huge_connectivity_dict[row[0]].add(CuidInfo(cuid=row[4], rel=row[3], rela=row[7]))
                 # the_huge_connectivity_dict[row[0]].add(row[4])
     pickle.dump(the_huge_connectivity_dict,
-                open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'huge_cuid_cuid_obj.pkl'), 'wb'))
+                open(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", 'huge_cuid_cuid_obj.pkl'), 'wb'))
 
 
 def my_rediculously_huge_umls_dict(all_rel):
@@ -79,8 +84,7 @@ class LabelCounter:
         valid_cuids = self.final_cuid_match.values()
         # We are going to perform K-hop neighbourhood search step. Hence, at each step, update the valid_cuids with the
         # nodes we visited in the latest traversal
-        the_huge_connectivity_dict = pickle.load(
-            open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'huge_cuid_cuid_obj.pkl'), 'rb'))
+        the_huge_connectivity_dict = pickle.load(open(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", 'huge_cuid_cuid_obj.pkl'), 'rb'))
         print("Connectivity dict loaded!!!")
         for k in range(self.num_hops):
             new_cuids_visited = set()
@@ -133,7 +137,7 @@ class LabelCounter:
         snp = np.asarray(subjs, dtype=np.int32)
         rnp = np.asarray(rels, dtype=np.int32)
         onp = np.asarray(objs, dtype=np.int32)
-        np.savez_compressed(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'graph_data.npz'),
+        np.savez_compressed(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", 'graph_data.npz'),
                             subj=snp,
                             rel=rnp,
                             obj=onp)
@@ -141,10 +145,10 @@ class LabelCounter:
     def _be_smart(self):
         self._build_parent_child_relations()
         id2conc = {v: k for k, v in self.conc2id.items()}
-        pickle.dump(id2conc, open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'mapper.pkl'), 'wb'))
+        pickle.dump(id2conc, open(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", 'mapper.pkl'), 'wb'))
         # Same for relations
         rel2conc = {v: k for k, v in self.rel2id.items()}
-        pickle.dump(rel2conc, open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'mapper_rel.pkl'), 'wb'))
+        pickle.dump(rel2conc, open(os.path.join(PROJECT_ROOT_DIR, "models", "our_method", "umls_generation", 'mapper_rel.pkl'), 'wb'))
         print("Task Failed Successfully!!!")
 
 
@@ -152,16 +156,15 @@ if __name__ == '__main__':
     start_time = time.time()
     all_rel = False
     my_rediculously_huge_umls_dict(all_rel=all_rel)
-    # Please make your life easier and pass labels in small case
-    # label_list = ['Atelectasis', 'pneumonia']
-    # making sure labels are in lower case.
-    # label_list = list(map(lambda x: x.lower(), label_list))
+    print("Ridiculously Huge dictionary built")
     # Make undirected only when we are not using all relations
     make_undirected = not all_rel
     defer_undirected_to_pyG = make_undirected
     assert defer_undirected_to_pyG == make_undirected, "Should be the same ALWAYSSSSSS!!!!"
-    LabelCounter(cuid_map=cuid_map, num_hops=3, defer_undirected_to_pyG=defer_undirected_to_pyG)
+    LabelCounter(cuid_map=cuid_map, num_hops=1, defer_undirected_to_pyG=defer_undirected_to_pyG)
     print("Generating the pytorch geometric dataset")
-    generate_dataset(make_undirected=make_undirected)
+    convert_relations_to_graph(make_undirected=make_undirected)
+    print("Now trimming generated nodes")
+    trim_nodes_and_store_cuid_graph(save_new_dataobject=True)
     print(f"Time taken is {time.time() - start_time} seconds")
     # In order to visualize the plots, use visualizations.graph_plits.py file

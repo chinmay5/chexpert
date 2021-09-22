@@ -3,6 +3,8 @@ from configparser import ConfigParser
 
 PROJECT_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+node_labeling_strategy = 'bert'
+GRAPH_FILE_NAME = f'curated_{node_labeling_strategy}_graph.pth'
 
 def read_config():
     """
