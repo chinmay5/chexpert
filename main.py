@@ -33,12 +33,13 @@ class CheXpertTrainer():
             param_group['lr'] = lr
         return lr
 
+
     @staticmethod
     def epochTrain(model, dataLoader_train, dataLoaderVal, dataLoaderTrainVal, optimizer, criterion, logger_train, logger_val, epochId,
                    max_val_auc, args):
 
         model.train()
-        for batchID, (varInput, target) in enumerate(dataLoader_train):
+        for batchID, (varInput, target, _) in enumerate(dataLoader_train):
 
             optimizer.zero_grad()
             varTarget = target.cuda(non_blocking=True)
@@ -49,7 +50,9 @@ class CheXpertTrainer():
                 varInput = varInput.to(DEVICE)
 
             varOutput = model(varInput)
-            lossvalue = criterion(varOutput, varTarget)
+            # NOTE: Making certain changes here, revert if needed
+            step = (epochId * len(dataLoader_train)) + batchID
+            lossvalue = criterion(varOutput, varTarget, logger=(logger_train, step))
 
             lossvalue.backward()
             optimizer.step()
@@ -90,7 +93,7 @@ class CheXpertTrainer():
         outPRED = torch.FloatTensor().to(DEVICE)
 
         with torch.no_grad():
-            for i, (varInput, target) in enumerate(dataLoader):
+            for i, (varInput, target, _) in enumerate(dataLoader):
                 # Handling the case of mimic wherein multiple images sent
                 if isinstance(varInput, list):
                     varInput = [x.to(DEVICE) for x in varInput]
@@ -171,11 +174,15 @@ class CheXpertTrainer():
         model.eval()
 
         with torch.no_grad():
-            for i, (input, target) in enumerate(dataLoaderTest):
-                input = input.to(DEVICE)
-                target = target.cuda()
+            for i, (varInput, target, _) in enumerate(dataLoaderTest):
+                # Handling the case of mimic wherein multiple images sent
+                if isinstance(varInput, list):
+                    varInput = [x.to(DEVICE) for x in varInput]
+                else:
+                    varInput = varInput.to(DEVICE)
+                target = target.to(DEVICE)
                 outGT = torch.cat((outGT, target), 0).to(DEVICE)
-                out = model(input)
+                out = model(varInput)
 
                 outPRED = torch.cat((outPRED, out), 0)
         aurocIndividual = CheXpertTrainer.computeAUROC(outGT, outPRED, nnClassCount)

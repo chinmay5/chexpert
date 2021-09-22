@@ -47,11 +47,11 @@ def get_data_splits():
         if not row['study_id'] in valid_sample_df.study_id.values:
             continue
         if row['split'] == 'train':
-            train_dict[row.subject_id][row.study_id].append(row['dicom_id']+".jpg")
+            train_dict[row.subject_id][row.study_id].append(row['dicom_id']+"_"+row['ViewPosition']+".jpg")
         elif row['split'] == 'validate':
-            valid_dict[row.subject_id][row.study_id].append(row['dicom_id']+".jpg")
+            valid_dict[row.subject_id][row.study_id].append(row['dicom_id']+"_"+row['ViewPosition']+".jpg")
         elif row['split'] == 'test':
-            test_dict[row.subject_id][row.study_id].append(row['dicom_id']+".jpg")
+            test_dict[row.subject_id][row.study_id].append(row['dicom_id']+"_"+row['ViewPosition']+".jpg")
         else:
             print(row)
             raise AttributeError("Invalid split type")

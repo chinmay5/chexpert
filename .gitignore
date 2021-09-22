@@ -2,5 +2,5 @@ data/
 .idea/
 results/
 **/__pycache__/
-
+**/*.html
 

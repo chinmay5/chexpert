@@ -84,6 +84,7 @@ def build_mimic_graph(split):
 
 def get_mimic_dataloader_dict(num_workers, batch_size):
     # Custom collate function since we want minimal change to the original framework
+    # TODO: Currently unused
     def collate_fn(data):
         # It is returning a list of tuples
         list_data, labels, extra_label_key = zip(*data)
@@ -103,11 +104,11 @@ def get_mimic_dataloader_dict(num_workers, batch_size):
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=max(0, num_workers),
-            collate_fn=collate_fn
+            collate_fn=None
         )
 
     data_iter = {
-        'train': get_data_loader(split='train', batch_size=batch_size, augment=True,
+        'train': get_data_loader(split='train', batch_size=batch_size, augment=False,
                                  preprocess=True, shuffle=True),
         'valid': get_data_loader(split='valid', batch_size=batch_size, augment=False,
                                  preprocess=True, shuffle=False),

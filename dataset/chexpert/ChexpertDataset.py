@@ -40,7 +40,7 @@ class ChexDataset(Dataset):
     def __getitem__(self, i):
 
         data_item = self.data_items[i]
-        img_path = data_item[0]
+        img_path_raw = data_item[0]
         img_label = data_item[1]
         labels = np.array(img_label)
         # NOTE: Use this section when changing the image size. For the sake of speed, I preprocessed the input if it is
@@ -56,7 +56,7 @@ class ChexDataset(Dataset):
         # new_img_name = img_path.replace("/", "_")
         # new_img_name = new_img_name[:new_img_name.find(".jpg")]
         # np.save(os.path.join(save_base_path, f"{new_img_name}.npy"), image)
-        img_path = img_path.replace("/", "_")
+        img_path = img_path_raw.replace("/", "_")
         image = np.load(os.path.join(save_base_path, f"{img_path[:img_path.find('.jpg')]}.npy"))
 
         # apply augmentations
@@ -78,7 +78,7 @@ class ChexDataset(Dataset):
         image = torch.as_tensor(image, dtype=torch.float32).unsqueeze(0)
         labels = torch.as_tensor(labels)
 
-        return image, labels
+        return image, labels, img_path_raw
 
     def __len__(self):
         return len(self.data_items)

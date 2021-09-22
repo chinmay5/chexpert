@@ -4,6 +4,8 @@ import os
 from collections import Counter
 
 import PIL
+import matplotlib.pyplot as plt
+import pandas as pd
 
 from PIL import Image
 
@@ -21,7 +23,10 @@ img_base_path = os.path.join(PROJECT_ROOT_DIR, "dataset", "mimic", "physionet.or
 img_root_dir = os.path.join(PROJECT_ROOT_DIR, "dataset", "mimic", "images")
 os.makedirs(img_root_dir, exist_ok=True)
 
-from torchvision import transforms
+
+view_file = pd.read_csv(os.path.join(PROJECT_ROOT_DIR, "dataset", "mimic", "physionet.org", "files", "mimic-cxr-jpg", "2.0.0", "mimic-cxr-2.0.0-metadata.csv"))
+
+
 
 class MimicDataset(Dataset):
 
@@ -41,14 +46,7 @@ class MimicDataset(Dataset):
         self.augment = augment
         self.parse_dictionary()
         self.img_size = read_config()['data'].getint('img_shape')
-        self.transforms = transforms.Compose([
-            transforms.Resize(self.img_size, self.img_size),
-            transforms.Normalize(
-                mean=129.09964561039797,
-                std=73.81427725645409
-            ),
-            transforms.ToTensor()
-        ])
+
 
     def parse_dictionary(self):
         self.data = []
@@ -58,14 +56,15 @@ class MimicDataset(Dataset):
         #                   [img1, img2, target_labels]
         #                   }
         #             }
-        for patient_id, study_dict in data_dict.items():
-            for study_id, data_items in study_dict.items():
+        for patient_id, study_dict in tqdm(data_dict.items()):
+            for study_id, data_items in study_dict.copy().items():
                 # We can iterate over the specific subset with values p13,p15...
                 patient_root_id = f"p{str(patient_id)[:2]}"
                 self.data.append(
                     [self.create_image_path(patient_id=patient_id, study_id=study_id, filename=data_items[0]),
                      self.create_image_path(patient_id=patient_id, study_id=study_id, filename=data_items[1]),
                      data_items[2]])
+
 
     def create_image_path(self, patient_id, study_id, filename):
         return os.path.join(f"p{str(patient_id)[:2]}", f"p{str(patient_id)}", f"s{str(study_id)}", filename)
@@ -75,13 +74,21 @@ class MimicDataset(Dataset):
 
     def __getitem__(self, item):
         # Add augmentations later on
-        img_f, img_l, img_label = self.data[item][0], self.data[item][1], self.data[item][2]
+        img1, img2, img_label = self.data[item][0], self.data[item][1], self.data[item][2]
         labels = np.array(img_label)
+        # We use frontal image as the first one and lateral as the second else we might have consistency issues
+        # while training the network.
+        if 'FRONTAL' in img1:
+            img_f, img_l = img1, img2
+        else:
+            img_f, img_l = img2, img1
+
         save_path = os.path.join(img_root_dir, img_f[:img_f.rfind("/")])
         image_f = np.load(os.path.join(save_path, img_f[img_f.rfind("/") + 1:img_f.rfind(".jpg")] + ".npy"))
         image_l = np.load(os.path.join(save_path, img_l[img_l.rfind("/") + 1:img_l.rfind(".jpg")] + ".npy"))
         # We have stored the extra labels in the format , KEY -> 'p10000032/s50414267', value -> [1,0,1,....]
         extra_label_key = img_f[4:img_f.rfind("/")]
+
         # read data
         # image_f = np.asarray(PIL.Image.open(os.path.join(img_base_path, img_f)))
         # image_l = np.asarray(PIL.Image.open(os.path.join(img_base_path, img_l)))
@@ -130,13 +137,20 @@ if __name__ == '__main__':
     # print("test img resize")
     # dataset = MimicDataset(split="test")
     # iterate_dataset(dataset=dataset)
+
+    # TODO: Later
     train_dict = pickle.load(open(os.path.join(PROJECT_ROOT_DIR, "dataset", "temp", "train.pkl"), "rb"))
     val_dict = pickle.load(open(os.path.join(PROJECT_ROOT_DIR, "dataset", "temp", "valid.pkl"), "rb"))
     train_val_dict = {k: train_dict[k] for k in list(train_dict)[:len(val_dict)]}
     pickle.dump(train_val_dict, open(os.path.join(PROJECT_ROOT_DIR, "dataset", "temp", "train_val.pkl"), "wb"))
-    dataset = MimicDataset(split="train")
+    # dataset = MimicDataset(split="valid", augment=True)
+    dataset = MimicDataset(split="test", augment=True)
+    f, axarr = plt.subplots(1, 2)
     for idx in range(len(dataset)):
         print(dataset[idx][0][0].shape)
         print(dataset[idx][0][1].shape)
         print(dataset[idx][1].shape)
+        axarr[0].imshow(dataset[idx][0][0][0])
+        axarr[1].imshow(dataset[idx][0][1][0])
+        plt.show()
         break

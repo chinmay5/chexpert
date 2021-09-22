@@ -5,117 +5,130 @@ import os
 import csv
 import pickle
 import time
-from pprint import pprint
 
 from tqdm import tqdm
 import numpy as np
 
 from environment_setup import PROJECT_ROOT_DIR
+from models.our_method.graph_gen_utils import generate_dataset, cuid_map, CuidInfo
 
-THRESHOLD_VAL = 10
+english_cuid_dict = pickle.load(open(os.path.join(PROJECT_ROOT_DIR, "dataset", "giant_map.pkl"), "rb"))
 
-cuid_map = {"pneumonia": "C0032285",
-            "edema": "C0034063",
-            "cardiomegaly": "C0018800",
-            "lesion of lung": "C0577916",
-            "lung opacity": "C4728208",
-            "lung consolidation": "C0521530",
-            "atelectasis": "C0004144",
-            "pneumothorax": "C0032326",
-            "fracture": "C0016658",
-            "supportdevice": "C0183683"
-            }
+
+
+def my_rediculously_huge_umls_dict_par_chd():
+    # NOTE: At this point, we are not taking into account the kind of relationship in the nodes
+    the_huge_connectivity_dict = defaultdict(set)
+    with open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
+        reader = csv.reader(file, delimiter='|')
+        for row in tqdm(reader):
+            if len(row[0]) == 0 or len(row[3]) == 0 or len(row[4]) == 0:
+                # empty entires, we should skip
+                continue
+            # https://www.nlm.nih.gov/research/umls/knowledge_sources/metathesaurus/release/abbreviations.html#mrdoc_REL
+            # We go for all relatiosn except del, no-mapping and self-related
+            if row[3] in ['PAR'] and all([row[0] in english_cuid_dict.keys(), row[4] in english_cuid_dict.keys()]):
+                the_huge_connectivity_dict[row[0]].add(CuidInfo(cuid=row[4], rel=row[3], rela=row[7]))
+    pickle.dump(the_huge_connectivity_dict,
+                open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'huge_cuid_cuid_obj.pkl'), 'wb'))
+
+
+def my_rediculously_huge_umls_dict_all_rel():
+    # NOTE: At this point, we are not taking into account the kind of relationship in the nodes
+    the_huge_connectivity_dict = defaultdict(set)
+    with open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
+        reader = csv.reader(file, delimiter='|')
+        for row in tqdm(reader):
+            if len(row[0]) == 0 or len(row[3]) == 0 or len(row[4]) == 0:
+                # empty entires, we should skip
+                continue
+            # https://www.nlm.nih.gov/research/umls/knowledge_sources/metathesaurus/release/abbreviations.html#mrdoc_REL
+            # We go for all relations except del, no-mapping and self-related
+            if row[3] in ['DEL', 'XR', 'RL']:
+                continue
+            #   Add relations only when they contain some meaningful semantic information
+            if all([row[0] in english_cuid_dict.keys(), row[4] in english_cuid_dict.keys()]):
+                the_huge_connectivity_dict[row[0]].add(CuidInfo(cuid=row[4], rel=row[3], rela=row[7]))
+                # the_huge_connectivity_dict[row[0]].add(row[4])
+    pickle.dump(the_huge_connectivity_dict,
+                open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'huge_cuid_cuid_obj.pkl'), 'wb'))
+
+
+def my_rediculously_huge_umls_dict(all_rel):
+    if all_rel:
+        my_rediculously_huge_umls_dict_all_rel()
+    else:
+        my_rediculously_huge_umls_dict_par_chd()
+
 
 class LabelCounter:
 
-    def __init__(self, label_list=None, select_all_cuids=False, cuid_map=None):
-        assert label_list is None or cuid_map is None, "Only works for label search or direct cuid_map"
+    def __init__(self, cuid_map=None, num_hops=1, defer_undirected_to_pyG=False):
 
         self.label_map = defaultdict(lambda: defaultdict(int))  # key = label, value = dict{cuid: count}
-        self.label_list = label_list
-        self.select_all_cuids = select_all_cuids
-        self.final_cuid_match = defaultdict(list)
-        self.cuid_map = cuid_map
+        self.num_hops = num_hops
+        self.final_cuid_match = cuid_map
         self.conc2id = {}
         self.rel2id = {}
+        self.defer_undirected_to_pyG = defer_undirected_to_pyG
         self._be_smart()
-
-    def _self_generate(self):
-        with open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'umls', 'META', 'MRCONSO.RRF')) as file:
-            # Pass through outer loop once and check values in the inner
-            reader = csv.reader(file, delimiter='|')
-            for row in tqdm(reader, desc="reading"):
-                for label in self.label_list:
-                    # C2910009|ENG|S|L10895526|PF|S13555892|Y|A21018258||330173||MEDCIN|SY|330173|atelectasis without respiratory distress syndrome|3|N||
-                    if label in row[14].lower():
-                        # Get the label back.
-                        # Look at the commented line for the logic
-                        # cuid_dict_of_label = self.label_list[label]
-                        # cuid_dict_of_label[row[0]] = cuid_dict_of_label.get(row[0], 0) + 1
-                        self.label_map[label][row[0]] += 1
-
-    def _select_best(self):
-        if self.select_all_cuids:
-            for label, value_dict in self.label_map.items():
-                for cuid, count in value_dict.items():
-                    if count > THRESHOLD_VAL:
-                        self.final_cuid_match[label].append(cuid)
-            self.final_cuid_match = dict(self.final_cuid_match)
-            return
-        # Select the cuid which is highest count
-        for label, value_dict in self.label_map.items():
-            max_cuid, best_cuid = 0, None
-            for cuid, count in value_dict.items():
-                if count > max_cuid:
-                    max_cuid = count
-                    best_cuid = cuid
-            # Now store this value in our code.
-            self.final_cuid_match[label] = best_cuid
-
 
     def _build_parent_child_relations(self):
         print("Building relations!!!")
         triples = set()
-        # valid_cuids = self.final_cuid_match.values() if not self.select_all_cuids else [k for m in self.final_cuid_match.values() for k, v in m.items()]
-        if self.select_all_cuids:
-            valid_cuids = []
-            for _, value in self.final_cuid_match.items():
-                valid_cuids.extend(value)
-        else:
-            valid_cuids = self.final_cuid_match.values()
+        valid_cuids = self.final_cuid_match.values()
+        # We are going to perform K-hop neighbourhood search step. Hence, at each step, update the valid_cuids with the
+        # nodes we visited in the latest traversal
+        the_huge_connectivity_dict = pickle.load(
+            open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'huge_cuid_cuid_obj.pkl'), 'rb'))
+        print("Connectivity dict loaded!!!")
+        for k in range(self.num_hops):
+            new_cuids_visited = set()
 
-        def add_concept(conc, is_concept):
-            if is_concept:
-                if conc in self.conc2id:
-                    cid = self.conc2id[conc]
+            def add_concept(conc, is_concept):
+                if is_concept:
+                    if conc in self.conc2id:
+                        cid = self.conc2id[conc]
+                    else:
+                        cid = len(self.conc2id)
+                        self.conc2id[conc] = cid
+                    return cid
                 else:
-                    cid = len(self.conc2id)
-                    self.conc2id[conc] = cid
-                return cid
-            else:
-                if conc in self.rel2id:
-                    rid = self.rel2id[conc]
-                else:
-                    rid = len(self.rel2id)
-                    self.rel2id[conc] = rid
-                return rid
+                    if conc in self.rel2id:
+                        rid = self.rel2id[conc]
+                    else:
+                        rid = len(self.rel2id)
+                        self.rel2id[conc] = rid
+                    return rid
 
-        with open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'umls', 'META', 'MRREL.RRF')) as file:
-            reader = csv.reader(file, delimiter='|')
-            for row in tqdm(reader):
-                if len(row[0]) == 0 or len(row[3]) == 0 or len(row[4]) == 0:
-                    # empty entires, we should skip
-                    continue
-                # CUI1 | AUI1 | STYPE1 | REL | CUI2 | AUI2 | STYPE2 | RELA | RUI | SRUI | SAB | SL | RG | DIR | SUPPRESS |CVF
-                # REL is defined as:- What relationship CUI2 has with CUI1
-                for cuid in valid_cuids:
-                    # PAR -> PARENT, CHD -> CHILD
-                    # if cuid in [row[0], row[4]] and row[3] in ['PAR']:
-                    if cuid in [row[0]] and row[3] in ['PAR']:
-                        sid = add_concept(row[0], is_concept=True)
-                        rid = add_concept(row[7], is_concept=False)
-                        oid = add_concept(row[4], is_concept=True)
+            for cuid in tqdm(valid_cuids):
+                # neighbourhood_cuids = the_huge_connectivity_dict[cuid]
+                # new_cuids_visited.update(neighbourhood_cuids)
+                cuid_info_objects = the_huge_connectivity_dict[cuid]
+                neighbourhood_cuids = [cuid_info_obj.cuid for cuid_info_obj in cuid_info_objects]
+                new_cuids_visited.update(neighbourhood_cuids)
+                # for neigh in neighbourhood_cuids:
+                for neigh_cuid_obj in cuid_info_objects:
+                    neigh = neigh_cuid_obj.cuid
+                    # We are not including self loops
+                    if cuid == neigh:
+                        continue
+                    # TODO: Include different kinds of relations
+                    sid = add_concept(cuid, is_concept=True)
+                    rid = add_concept(neigh_cuid_obj.rela, is_concept=False)
+                    oid = add_concept(neigh, is_concept=True)
+                    # Include the triplets only when they are not already a part
+                    if (sid, rid, oid) not in triples:
+                        if self.defer_undirected_to_pyG:
+                            # Check if inverse relation is already present. If so, skip it. We create it later on
+                            if (oid, rid, sid) in triples:
+                                # We need to skip these elements
+                                continue
                         triples.add((sid, rid, oid))
+                    else:
+                        # print("repeated triple skipping")
+                        pass
+            valid_cuids = new_cuids_visited
         subjs, rels, objs = zip(*triples)
         snp = np.asarray(subjs, dtype=np.int32)
         rnp = np.asarray(rels, dtype=np.int32)
@@ -126,14 +139,6 @@ class LabelCounter:
                             obj=onp)
 
     def _be_smart(self):
-        if self.cuid_map is None:
-            self._self_generate()
-            self._select_best()
-            pprint(self.final_cuid_match)
-            pickle.dump(self.final_cuid_match, open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'label_cuid_map.pkl'), 'wb'))
-        else:
-            self.final_cuid_match = cuid_map
-        # The relationships are built for every cuid map entry.
         self._build_parent_child_relations()
         id2conc = {v: k for k, v in self.conc2id.items()}
         pickle.dump(id2conc, open(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'mapper.pkl'), 'wb'))
@@ -145,10 +150,18 @@ class LabelCounter:
 
 if __name__ == '__main__':
     start_time = time.time()
+    all_rel = False
+    my_rediculously_huge_umls_dict(all_rel=all_rel)
     # Please make your life easier and pass labels in small case
     # label_list = ['Atelectasis', 'pneumonia']
     # making sure labels are in lower case.
     # label_list = list(map(lambda x: x.lower(), label_list))
-
-    LabelCounter(label_list=None, select_all_cuids=False, cuid_map=cuid_map)
+    # Make undirected only when we are not using all relations
+    make_undirected = not all_rel
+    defer_undirected_to_pyG = make_undirected
+    assert defer_undirected_to_pyG == make_undirected, "Should be the same ALWAYSSSSSS!!!!"
+    LabelCounter(cuid_map=cuid_map, num_hops=3, defer_undirected_to_pyG=defer_undirected_to_pyG)
+    print("Generating the pytorch geometric dataset")
+    generate_dataset(make_undirected=make_undirected)
     print(f"Time taken is {time.time() - start_time} seconds")
+    # In order to visualize the plots, use visualizations.graph_plits.py file
