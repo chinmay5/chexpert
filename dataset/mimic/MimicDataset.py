@@ -15,7 +15,6 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from dataset.data_utils import make_square, preprocess_fn, augment_fn
 from environment_setup import PROJECT_ROOT_DIR, read_config
 
 img_base_path = os.path.join(PROJECT_ROOT_DIR, "dataset", "mimic", "physionet.org", "files", "mimic-cxr-jpg", "2.0.0", "files")

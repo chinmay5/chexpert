@@ -10,7 +10,6 @@ import numpy as np
 
 from torchvision.transforms import transforms
 
-from dataset.data_utils import augment_fn
 from environment_setup import PROJECT_ROOT_DIR, read_config
 
 img_base_path = os.path.join(PROJECT_ROOT_DIR, 'dataset')
