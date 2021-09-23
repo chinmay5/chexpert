@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score
 from torch import optim
 from torch.backends import cudnn
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from dataset.dataloader_factory import get_dataloader
 from environment_setup import PROJECT_ROOT_DIR, read_config
@@ -33,22 +34,17 @@ class CheXpertTrainer():
             param_group['lr'] = lr
         return lr
 
-
     @staticmethod
-    def epochTrain(model, dataLoader_train, dataLoaderVal, dataLoaderTrainVal, optimizer, criterion, logger_train, logger_val, epochId,
-                   max_val_auc, args):
+    def epochTrain(model, dataLoader_train, dataLoaderVal, dataLoaderTrainVal, optimizer, criterion, logger_train,
+                   logger_val, epochId,
+                   max_val_auc, args, lr_schedule):
 
         model.train()
         for batchID, (varInput, target) in enumerate(dataLoader_train):
 
             optimizer.zero_grad()
             varTarget = target.cuda(non_blocking=True)
-            # Handling the case of mimic wherein multiple images sent
-            if isinstance(varInput, list):
-                varInput = [x.to(DEVICE) for x in varInput]
-            else:
-                varInput = varInput.to(DEVICE)
-
+            varInput = varInput.to(DEVICE)
             varOutput = model(varInput)
             # NOTE: Making certain changes here, revert if needed
             step = (epochId * len(dataLoader_train)) + batchID
@@ -65,7 +61,8 @@ class CheXpertTrainer():
                 logger_val.add_scalar(tag="loss", scalar_value=le, global_step=step)
                 logger_val.add_scalar(tag="mean_auc", scalar_value=val_auc, global_step=step)
                 # We also put in the training mean_auc to compare. For this, we use a subset of train samples
-                _, train_auc = CheXpertTrainer.epochVal(model=model, dataLoader=dataLoaderTrainVal, loss=criterion, args=args)
+                _, train_auc = CheXpertTrainer.epochVal(model=model, dataLoader=dataLoaderTrainVal, loss=criterion,
+                                                        args=args)
                 logger_train.add_scalar(tag="mean_auc", scalar_value=train_auc, global_step=step)
                 # Put the model back in training mode
                 model.train()
@@ -76,10 +73,8 @@ class CheXpertTrainer():
                                os.path.join(args.save_dir, 'model' + str(epochId) + '.pth'))
                 print(f"Epoch {epochId}:{batchID} iterations completed")
 
-        # lr scheduling
-        if args.lr_schedule and (epochId + 1) % args.schedule_after_epochs == 0:
-            args.lr = CheXpertTrainer.scale_lr(lr=args.lr, factor=args.factor, optimizer=optimizer)
-
+                # Schedule based on epoch loss
+                lr_schedule.step(le)
         return max_val_auc
 
     @staticmethod
@@ -117,7 +112,8 @@ class CheXpertTrainer():
         return outLoss, aurocMean
 
     @staticmethod
-    def perform_train_val(model, dataLoaderTrain, dataLoaderVal, dataLoaderTrainVal, trMaxEpoch, logdir, checkpoint, args, optimizer, criterion):
+    def perform_train_val(model, dataLoaderTrain, dataLoaderVal, dataLoaderTrainVal, trMaxEpoch, logdir, checkpoint,
+                          args, optimizer, criterion, lr_schedule):
 
         # LOAD CHECKPOINT
         if checkpoint != None:
@@ -133,12 +129,11 @@ class CheXpertTrainer():
 
         # Mixed Precision Training
         for epochID in range(trMaxEpoch):
-            # (model, dataLoader_train, dataLoaderVal, optimizer, criterion, logger_train, logger_val, epochId
             max_val_auc = CheXpertTrainer.epochTrain(model=model, dataLoader_train=dataLoaderTrain,
                                                      dataLoaderVal=dataLoaderVal,
                                                      dataLoaderTrainVal=dataLoaderTrainVal,
                                                      optimizer=optimizer, criterion=criterion,
-                                                     logger_train=logger_train,
+                                                     logger_train=logger_train, lr_schedule=lr_schedule,
                                                      logger_val=logger_val, epochId=epochID,
                                                      max_val_auc=max_val_auc, args=args)
         # Select the last saved model as it would work as the best model
@@ -169,22 +164,20 @@ class CheXpertTrainer():
             modelCheckpoint = torch.load(checkpoint)
             model.load_state_dict(modelCheckpoint['state_dict'])
 
-        outGT = torch.FloatTensor().to(DEVICE)
-        outPRED = torch.FloatTensor().to(DEVICE)
+        cudnn.benchmark = True
+        outGT = torch.FloatTensor().cuda()
+        outPRED = torch.FloatTensor().cuda()
         model.eval()
-
-        with torch.no_grad():
-            for i, (varInput, target) in enumerate(dataLoaderTest):
-                # Handling the case of mimic wherein multiple images sent
-                if isinstance(varInput, list):
-                    varInput = [x.to(DEVICE) for x in varInput]
-                else:
-                    varInput = varInput.to(DEVICE)
+        for i, (inputs, target) in enumerate(tqdm(dataLoaderTest)):
+            with torch.no_grad():
                 target = target.to(DEVICE)
-                outGT = torch.cat((outGT, target), 0).to(DEVICE)
-                out = model(varInput)
+                outGT = torch.cat((outGT, target), 0)
+                bs, n_crops, c, h, w = inputs.size()
+                varInput = torch.autograd.Variable(inputs.view(-1, c, h, w).to(DEVICE))
+                out, _ = model(varInput)
+                out = out.view(bs, n_crops, -1).mean(1)
+                outPRED = torch.cat((outPRED, out.data), 0)
 
-                outPRED = torch.cat((outPRED, out), 0)
         aurocIndividual = CheXpertTrainer.computeAUROC(outGT, outPRED, nnClassCount)
         aurocMean = np.array(aurocIndividual).mean()
         # test_logger.add_embedding(mat=model.get_embedding(), metadata=class_names)
@@ -206,15 +199,22 @@ class CheXpertTrainer():
         model = create_model(args.model_type).to(DEVICE)
         args.class_count = nn_class_count
         # SETTINGS: OPTIMIZER & SCHEDULER
-        # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
+        optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08,
+                               weight_decay=args.weight_decay)
+        lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=args.factor,
+                                                           patience=args.schedule_after_epochs, verbose=True)
+
+        # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
         # Loss function formulation
         criterion = WCELossFuncMy(alpha=args.alpha, beta=args.beta, num_class=nn_class_count)
         if args.mode == 'train':
             bestModelNumber = self.perform_train_val(model=model, dataLoaderTrain=data_loader['train'],
-                                                     dataLoaderVal=data_loader['valid'], dataLoaderTrainVal=data_loader['train_val'],
-                                                     trMaxEpoch=args.max_epoch, logdir=args.logdir, checkpoint=args.pretrained_checkpoint,
-                                                     optimizer=optimizer, args=args, criterion=criterion)
+                                                     dataLoaderVal=data_loader['valid'],
+                                                     dataLoaderTrainVal=data_loader['train_val'],
+                                                     trMaxEpoch=args.max_epoch, logdir=args.logdir,
+                                                     checkpoint=args.pretrained_checkpoint,
+                                                     optimizer=optimizer, args=args, criterion=criterion,
+                                                     lr_schedule=lr_schedule)
             print("Model trained")
         else:
             bestModelNumber = args.model_number

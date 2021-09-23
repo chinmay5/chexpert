@@ -21,8 +21,7 @@ class ChexDataset(Dataset):
     def __init__(
             self,
             data_items,
-            augment=False,
-            preprocess=False,
+            mode='train',
             uncertainty_labels='positive'
     ):
 
@@ -31,38 +30,59 @@ class ChexDataset(Dataset):
         mode: 'positive', 'negative', 'ignore'. Denote U-ignore or U-positive or U-negative
         """
         self.data_items = data_items
-        self.transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[129.09964561039797], std=[73.81427725645409]
-            )
-        ])
-        self.preprocess = preprocess
-        self.augment = augment
+        self.mode = mode
         self.uncertainty_labels = uncertainty_labels
-        self.img_size = read_config()['data'].getint('img_shape')
+        img_size = read_config()['data'].getint('img_shape')
+        crop_size = read_config()['data'].getint('crop_size')
+        # Create the augmentations
+        normalize = transforms.Normalize(
+            mean=[129.09964561039797], std=[73.81427725645409]
+        )
+        train_transforms, val_transforms, test_transforms = self.get_transforms(crop_size, img_size, normalize)
+        if mode == 'train':
+            self.transform = train_transforms
+        elif mode == 'valid' or mode == 'train_val':
+            self.transform = val_transforms
+        elif mode == 'test':
+            self.transform = test_transforms
+        else:
+            raise AttributeError(f"Invalid mode selected. Selection was {mode}")
         print('[*] uMode:', self.uncertainty_labels)
+
+    def get_transforms(self, crop_size, img_size, normalize):
+        # The train transforms
+        train_transforms = []
+        train_transforms.append(transforms.Resize(img_size))
+        train_transforms.append(transforms.RandomResizedCrop(crop_size))
+        train_transforms.append(transforms.RandomHorizontalFlip())
+        train_transforms.append(transforms.ToTensor())
+        train_transforms.append(normalize)
+        train_transforms = transforms.Compose(train_transforms)
+        # The val transforms
+        val_transforms = []
+        val_transforms.append(transforms.Resize(crop_size))  # crop determines the size
+        val_transforms.append(transforms.ToTensor())
+        val_transforms.append(normalize)
+        val_transforms = transforms.Compose(val_transforms)
+        # The test transforms
+        test_transforms = []
+        test_transforms.append(transforms.Resize(img_size))
+        test_transforms.append(transforms.TenCrop(crop_size))
+        test_transforms.append(
+            transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])))
+        test_transforms.append(transforms.Lambda(lambda crops: torch.stack([normalize(crop) for crop in crops])))
+        test_transforms = transforms.Compose(test_transforms)
+        return train_transforms, val_transforms, test_transforms
 
     def __getitem__(self, i):
 
         data_item = self.data_items[i]
         img_path = data_item[0]
         img_label = data_item[1]
-        labels = np.array(img_label)
-        # NOTE: Use this section when changing the image size. For the sake of speed, I preprocessed the input if it is
-        # of a fixed size and simply load the numpy arrays.
-        # read data
         image = PIL.Image.open(os.path.join(img_base_path, img_path))
         labels = np.array(img_label)
-        # Resize the image
-        image = transforms.Resize((self.img_size, self.img_size))(image)
-        # apply augmentations
-        if self.augment:
-            image = augment_fn(image=image)
-
-        # apply preprocessinging
-        if self.preprocess:
-            image = self.transforms(image)
+        # apply task specific transformations
+        image = self.transform(image)
 
         # how to handle uncertain labels? for ex: u-positive or u-negative
         if self.uncertainty_labels == 'negative':
