@@ -51,7 +51,7 @@ class ChexDataset(Dataset):
     def get_transforms(self, crop_size, img_size, normalize):
         # The train transforms
         train_transforms = []
-        train_transforms.append(transforms.Resize(img_size))
+        train_transforms.append(transforms.Resize((img_size, img_size)))
         train_transforms.append(transforms.RandomResizedCrop(crop_size))
         train_transforms.append(transforms.RandomHorizontalFlip())
         train_transforms.append(transforms.ToTensor())
@@ -59,13 +59,13 @@ class ChexDataset(Dataset):
         train_transforms = transforms.Compose(train_transforms)
         # The val transforms
         val_transforms = []
-        val_transforms.append(transforms.Resize(crop_size))  # crop determines the size
+        val_transforms.append(transforms.Resize((crop_size, crop_size)))  # crop determines the size
         val_transforms.append(transforms.ToTensor())
         val_transforms.append(normalize)
         val_transforms = transforms.Compose(val_transforms)
         # The test transforms
         test_transforms = []
-        test_transforms.append(transforms.Resize(img_size))
+        test_transforms.append(transforms.Resize((img_size, img_size)))
         test_transforms.append(transforms.TenCrop(crop_size))
         test_transforms.append(
             transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])))
