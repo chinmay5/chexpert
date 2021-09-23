@@ -7,7 +7,6 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 import numpy as np
-from skimage import transform
 
 from torchvision.transforms import transforms
 
@@ -73,7 +72,7 @@ class ChexDataset(Dataset):
         elif self.uncertainty_labels == 'multiclass':
             labels[labels == -1] = 2
         # Convert them to tensors and add an extra channel for the image
-        image = torch.as_tensor(image, dtype=torch.float32).unsqueeze(0)
+        image = torch.as_tensor(image, dtype=torch.float32)
         labels = torch.as_tensor(labels)
 
         return image, labels

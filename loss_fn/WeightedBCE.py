@@ -49,8 +49,8 @@ class WCELossFuncMy(nn.Module):
         self.alpha = alpha
         self.beta = beta
         self.num_class = num_class
-        self.threshold_mat = torch.tensor(np.load(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'mask_table.npy')),
-                                          dtype=torch.bool)
+        #self.threshold_mat = torch.tensor(np.load(os.path.join(PROJECT_ROOT_DIR, 'dataset', 'mask_table.npy')),
+        #                                  dtype=torch.bool)
         self.labda = 1 / 10
 
     def forward(self, output, target, logger=None):

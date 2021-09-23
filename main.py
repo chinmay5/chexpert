@@ -39,7 +39,7 @@ class CheXpertTrainer():
                    max_val_auc, args):
 
         model.train()
-        for batchID, (varInput, target, _) in enumerate(dataLoader_train):
+        for batchID, (varInput, target) in enumerate(dataLoader_train):
 
             optimizer.zero_grad()
             varTarget = target.cuda(non_blocking=True)
@@ -93,7 +93,7 @@ class CheXpertTrainer():
         outPRED = torch.FloatTensor().to(DEVICE)
 
         with torch.no_grad():
-            for i, (varInput, target, _) in enumerate(dataLoader):
+            for i, (varInput, target) in enumerate(dataLoader):
                 # Handling the case of mimic wherein multiple images sent
                 if isinstance(varInput, list):
                     varInput = [x.to(DEVICE) for x in varInput]
@@ -174,7 +174,7 @@ class CheXpertTrainer():
         model.eval()
 
         with torch.no_grad():
-            for i, (varInput, target, _) in enumerate(dataLoaderTest):
+            for i, (varInput, target) in enumerate(dataLoaderTest):
                 # Handling the case of mimic wherein multiple images sent
                 if isinstance(varInput, list):
                     varInput = [x.to(DEVICE) for x in varInput]
