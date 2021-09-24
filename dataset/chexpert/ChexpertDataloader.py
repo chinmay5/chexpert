@@ -148,10 +148,10 @@ def get_chexpert_data_loader_dict(uncertainty_labels='positive', batch_size=64, 
     # data_items['valid'] = data_items_va[::10]
     # data_items['test']  = data_items_te[::10]
 
-    def get_data_loader(data_items, split, batch_size, shuffle=True):
+    def get_data_loader(data_items, split, batch_size, augment, preprocess, shuffle=True):
         data_items = data_items[split]
 
-        ds = ChexDataset(data_items, mode=split, uncertainty_labels=uncertainty_labels)
+        ds = ChexDataset(data_items, augment=augment, preprocess=preprocess, uncertainty_labels=uncertainty_labels)
 
         print('Loaded {} dataset with {} IDs.'.format(split, ds.__len__()))
 
@@ -163,10 +163,14 @@ def get_chexpert_data_loader_dict(uncertainty_labels='positive', batch_size=64, 
         )
 
     data_iter = {
-        'train': get_data_loader(data_items=data_items, split='train', batch_size=batch_size, shuffle=True),
-        'valid': get_data_loader(data_items=data_items, split='valid', batch_size=batch_size, shuffle=False),
-        'test': get_data_loader(data_items=data_items, split='test', batch_size=batch_size, shuffle=False),
-        'train_val': get_data_loader(data_items=data_items, split='train_val', batch_size=batch_size, shuffle=False),
+        'train': get_data_loader(data_items=data_items, split='train', batch_size=batch_size, augment=True,
+                                 preprocess=True, shuffle=True),
+        'valid': get_data_loader(data_items=data_items, split='valid', batch_size=batch_size, augment=False,
+                                 preprocess=True, shuffle=False),
+        'test': get_data_loader(data_items=data_items, split='test', batch_size=batch_size, augment=False,
+                                preprocess=True, shuffle=False),
+        'train_val': get_data_loader(data_items=data_items, split='train_val', batch_size=batch_size, augment=False,
+                                     preprocess=True, shuffle=False),
     }
 
     # The training set needs to be used for creating the graph in our baseline method. Hence, we save it here.
@@ -180,6 +184,7 @@ def get_chexpert_data_loader_dict(uncertainty_labels='positive', batch_size=64, 
 
     print('[*] Finished everything concerned with data loading!')
     return data_iter
+
 
 if __name__ == '__main__':
     parser = read_config()
