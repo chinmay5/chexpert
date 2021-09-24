@@ -157,32 +157,27 @@ class CheXpertTrainer():
 
     @staticmethod
     def test(model, dataLoaderTest, nnClassCount, checkpoint, class_names, test_logger):
-
         cudnn.benchmark = True
-
         if checkpoint != None and torch.cuda.is_available():
             modelCheckpoint = torch.load(checkpoint)
             model.load_state_dict(modelCheckpoint['state_dict'])
 
-        cudnn.benchmark = True
-        outGT = torch.FloatTensor().cuda()
-        outPRED = torch.FloatTensor().cuda()
+        outGT = torch.FloatTensor().to(DEVICE)
+        outPRED = torch.FloatTensor().to(DEVICE)
         model.eval()
-        for i, (inputs, target) in enumerate(tqdm(dataLoaderTest)):
-            with torch.no_grad():
-                target = target.to(DEVICE)
-                outGT = torch.cat((outGT, target), 0)
-                bs, n_crops, c, h, w = inputs.size()
-                varInput = torch.autograd.Variable(inputs.view(-1, c, h, w).to(DEVICE))
-                out, _ = model(varInput)
-                out = out.view(bs, n_crops, -1).mean(1)
-                outPRED = torch.cat((outPRED, out.data), 0)
 
+        with torch.no_grad():
+            for i, (input, target) in enumerate(dataLoaderTest):
+                input = input.to(DEVICE)
+                target = target.cuda()
+                outGT = torch.cat((outGT, target), 0).to(DEVICE)
+                out = model(input)
+
+                outPRED = torch.cat((outPRED, out), 0)
         aurocIndividual = CheXpertTrainer.computeAUROC(outGT, outPRED, nnClassCount)
         aurocMean = np.array(aurocIndividual).mean()
         # test_logger.add_embedding(mat=model.get_embedding(), metadata=class_names)
         print('AUROC mean ', aurocMean)
-
         for i in range(0, len(aurocIndividual)):
             print(class_names[i], ' ', aurocIndividual[i])
 
